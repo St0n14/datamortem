@@ -1,0 +1,43 @@
+# ---- Python / Dev ----
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.venv/
+.env
+.env.local
+*.log
+
+# ---- JJ / Git / IDE ----
+.jj/
+.git/
+.idea/
+.vscode/
+*.swp
+
+# ---- Local Databases ----
+*.db
+*.sqlite
+*.sqlite3
+
+# ---- DFIR Evidence & Outputs ----
+storage/
+storage/evidence-master/
+storage/evidence-master/**
+*.vmdk
+*.img
+*.iso
+*.evtx
+*.mem
+*.pcap
+*.csv
+*.jsonl
+*.zip
+*.tar
+*.tar.gz
+*.parquet
+*.tmp
+
+# ---- Test outputs ----
+test_output_*

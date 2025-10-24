@@ -1,0 +1,37 @@
+# Disk DescriptorFile
+version=1
+encoding="windows-1252"
+CID=da2a38d4
+parentCID=ffffffff
+createType="twoGbMaxExtentSparse"
+
+# Extent description
+RW 8323072 SPARSE "flare-s001.vmdk"
+RW 8323072 SPARSE "flare-s002.vmdk"
+RW 8323072 SPARSE "flare-s003.vmdk"
+RW 8323072 SPARSE "flare-s004.vmdk"
+RW 8323072 SPARSE "flare-s005.vmdk"
+RW 8323072 SPARSE "flare-s006.vmdk"
+RW 8323072 SPARSE "flare-s007.vmdk"
+RW 8323072 SPARSE "flare-s008.vmdk"
+RW 8323072 SPARSE "flare-s009.vmdk"
+RW 8323072 SPARSE "flare-s010.vmdk"
+RW 8323072 SPARSE "flare-s011.vmdk"
+RW 8323072 SPARSE "flare-s012.vmdk"
+RW 8323072 SPARSE "flare-s013.vmdk"
+RW 8323072 SPARSE "flare-s014.vmdk"
+RW 8323072 SPARSE "flare-s015.vmdk"
+RW 983040 SPARSE "flare-s016.vmdk"
+
+# The Disk Data Base 
+#DDB
+
+ddb.adapterType = "lsilogic"
+ddb.geometry.cylinders = "7832"
+ddb.geometry.heads = "255"
+ddb.geometry.sectors = "63"
+ddb.longContentID = "1fd9b70c212df518a9045209da2a38d4"
+ddb.toolsInstallType = "1"
+ddb.toolsVersion = "11365"
+ddb.uuid = "60 00 C2 9a b9 07 b7 05-71 99 4d 68 05 37 11 c6"
+ddb.virtualHWVersion = "19"
