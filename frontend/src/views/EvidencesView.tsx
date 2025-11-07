@@ -24,14 +24,17 @@ interface EvidencesViewProps {
   darkMode: boolean;
   currentCaseId: string;
   onCaseChange?: (caseId: string) => void;
+  onCasesUpdated?: () => void;
 }
 
-export function EvidencesView({ darkMode, currentCaseId, onCaseChange }: EvidencesViewProps) {
+export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUpdated }: EvidencesViewProps) {
   const [evidences, setEvidences] = useState<Evidence[]>([]);
   const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showAddCaseModal, setShowAddCaseModal] = useState(false);
+  const [caseNoteDraft, setCaseNoteDraft] = useState("");
+  const [caseStatusDraft, setCaseStatusDraft] = useState("open");
 
   // Form state for new evidence
   const [newEvidence, setNewEvidence] = useState({
@@ -52,6 +55,13 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange }: Evidenc
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  const currentCase = cases.find((c) => c.case_id === currentCaseId);
+
+  useEffect(() => {
+    setCaseNoteDraft(currentCase?.note ?? "");
+    setCaseStatusDraft(currentCase?.status ?? "open");
+  }, [currentCaseId, currentCase?.note, currentCase?.status]);
+
   useEffect(() => {
     loadCases();
     loadEvidences();
@@ -63,8 +73,10 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange }: Evidenc
       if (!res.ok) throw new Error("Failed to load cases");
       const data = await res.json();
       setCases(data);
+      return data as Case[];
     } catch (err) {
       console.error("Failed to load cases:", err);
+      return [];
     }
   };
 
@@ -157,10 +169,81 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange }: Evidenc
 
       setSuccess("Case created successfully!");
       setShowAddCaseModal(false);
+      const createdCaseId = newCase.case_id;
       setNewCase({ case_id: "", note: "" });
-      loadCases();
+      const updatedCases = await loadCases();
+      onCasesUpdated?.();
+      if (createdCaseId) {
+        onCaseChange?.(createdCaseId);
+      } else if (updatedCases.length > 0) {
+        onCaseChange?.(updatedCases[0].case_id);
+      }
     } catch (err: any) {
       setError(err.message);
+    }
+  };
+
+  const handleUpdateCaseMeta = async () => {
+    if (!currentCaseId) {
+      setError("Select a case first");
+      return;
+    }
+
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const res = await fetch(`/api/cases/${currentCaseId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          note: caseNoteDraft,
+          status: caseStatusDraft,
+        }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.detail || "Failed to update case");
+      }
+
+      setSuccess("Case updated");
+      onCasesUpdated?.();
+      await loadCases();
+    } catch (err: any) {
+      setError(err.message || "Failed to update case");
+    }
+  };
+
+  const handleDeleteCase = async () => {
+    if (!currentCaseId) return;
+    if (!window.confirm(`Delete case ${currentCaseId}? This will remove evidences and events linked to it.`)) {
+      return;
+    }
+
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const res = await fetch(`/api/cases/${currentCaseId}`, {
+        method: "DELETE",
+      });
+
+      if (!res.ok && res.status !== 204) {
+        const errorData = await res.json();
+        throw new Error(errorData.detail || "Failed to delete case");
+      }
+
+      setSuccess("Case deleted");
+      const updatedCases = await loadCases();
+      onCasesUpdated?.();
+      if (updatedCases.length > 0) {
+        onCaseChange?.(updatedCases[0].case_id);
+      } else {
+        onCaseChange?.("");
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to delete case");
     }
   };
 
@@ -241,6 +324,80 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange }: Evidenc
           </div>
         </CardContent>
       </Card>
+
+      {currentCase ? (
+        <Card className={bgCard}>
+          <CardContent className="p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className={`text-base font-semibold ${textStrong}`}>{currentCase.case_id}</h3>
+                <p className={`text-xs ${textWeak}`}>Created {formatDate(currentCase.created_at_utc)}</p>
+              </div>
+              <Badge
+                className={`text-[10px] border ${
+                  caseStatusDraft === "closed"
+                    ? darkMode
+                      ? "bg-rose-900/30 text-rose-200 border-rose-500/30"
+                      : "bg-rose-100 text-rose-700 border-rose-300"
+                    : darkMode
+                    ? "bg-emerald-900/20 text-emerald-200 border-emerald-500/30"
+                    : "bg-emerald-100 text-emerald-700 border-emerald-300"
+                }`}
+              >
+                {caseStatusDraft.toUpperCase()}
+              </Badge>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className={`text-sm font-medium ${textStrong}`}>Case note</label>
+              <textarea
+                value={caseNoteDraft}
+                onChange={(e) => setCaseNoteDraft(e.target.value)}
+                rows={3}
+                className={`w-full rounded-lg border px-3 py-2 text-sm resize-none ${
+                  darkMode ? "border-slate-700 bg-slate-900 text-slate-100" : "border-gray-300 bg-white text-gray-900"
+                }`}
+                placeholder="Add investigation notes, context, or summary..."
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <label className={`text-sm font-medium ${textStrong}`}>Status</label>
+              <select
+                value={caseStatusDraft}
+                onChange={(e) => setCaseStatusDraft(e.target.value)}
+                className={`rounded-lg border px-3 py-2 text-sm ${
+                  darkMode ? "border-slate-700 bg-slate-900 text-slate-100" : "border-gray-300 bg-white text-gray-900"
+                }`}
+              >
+                <option value="open">Open</option>
+                <option value="closed">Closed</option>
+              </select>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 justify-between">
+              <Button
+                onClick={handleUpdateCaseMeta}
+                className={`${darkMode ? "border-emerald-600/30 bg-emerald-900/20 text-emerald-200 hover:bg-emerald-900/30" : "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"}`}
+              >
+                Save changes
+              </Button>
+              <Button
+                onClick={handleDeleteCase}
+                className={`${darkMode ? "border-rose-600/30 bg-rose-900/20 text-rose-200 hover:bg-rose-900/30" : "border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100"}`}
+              >
+                Delete case
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className={bgCard}>
+          <CardContent className="p-4">
+            <p className={textWeak}>No case selected. Create one to start managing evidences.</p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Evidences List */}
       <Card className={`flex-1 ${bgCard}`}>

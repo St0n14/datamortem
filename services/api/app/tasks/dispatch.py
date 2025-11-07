@@ -1,11 +1,13 @@
 from .parse_mft import parse_mft_task
 from .parse_registry import parse_registry_task
 from .parse_users import parse_users_task
+from .dissect_mft import dissect_extract_mft
 
 _TASK_MAP = {
     "parse_mft": parse_mft_task,
     "parse_registry": parse_registry_task,
     "parse_users": parse_users_task,
+    "dissect_mft": dissect_extract_mft,
 }
 
 def dispatch_module_task(module_name: str, evidence_uid: str, task_run_id: int):

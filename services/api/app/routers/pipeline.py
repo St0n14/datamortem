@@ -14,6 +14,7 @@ from ..tasks.parse_mft import parse_mft_task
 from ..tasks.sample_long_task import sample_long_task
 from ..tasks.generate_test_events import generate_test_events
 from ..tasks.parse_dissect import parse_with_dissect
+from ..tasks.dissect_mft import dissect_extract_mft
 # À terme tu ajouteras ici d'autres tasks:
 # from ..tasks.parse_registry import parse_registry_task
 # from ..tasks.extract_modules import extract_modules_task
@@ -27,6 +28,7 @@ TASK_REGISTRY = {
     "sample_long_task": sample_long_task,
     "generate_test_events": generate_test_events,
     "parse_dissect": parse_with_dissect,
+    "dissect_mft": dissect_extract_mft,
     # "parse_registry": parse_registry_task,
     # "extract_modules": extract_modules_task,
 }

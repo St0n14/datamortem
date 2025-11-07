@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   Wrench,
   HardDrive,
+  X,
 } from "lucide-react";
 
 import { Card, CardContent } from "./components/ui/Card";
@@ -30,6 +31,13 @@ type EventRow = {
   score: number;
 };
 
+type CaseSummary = {
+  case_id: string;
+  status?: string;
+  note?: string | null;
+  created_at_utc?: string;
+};
+
 export default function App() {
   const [darkMode, setDarkMode] = useState(true);
   const [activeTab, setActiveTab] =
@@ -37,6 +45,8 @@ export default function App() {
 
   const [currentCaseId, setCurrentCaseId] = useState<string>("test_pc_001");
   const [selectedEvidenceUid] = useState<string | null>("evidence_pc_001");
+  const [cases, setCases] = useState<CaseSummary[]>([]);
+  const [casesRefreshToken, setCasesRefreshToken] = useState(0);
 
   const [events, setEvents] = useState<EventRow[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
@@ -59,6 +69,10 @@ export default function App() {
     }
   }, [currentCaseId]);
 
+  useEffect(() => {
+    loadCases();
+  }, [casesRefreshToken]);
+
   const loadEventsFromOpenSearch = async () => {
     try {
       const res = await fetch('/api/search/query', {
@@ -75,6 +89,8 @@ export default function App() {
 
       if (!res.ok) {
         console.error('Search failed');
+        setEvents([]);
+        setSelectedEventId(null);
         return;
       }
 
@@ -93,16 +109,49 @@ export default function App() {
       }));
 
       setEvents(eventRows);
-      if (eventRows.length > 0 && !selectedEventId) {
-        setSelectedEventId(eventRows[0].id);
-      }
+      setSelectedEventId(null);
     } catch (err) {
       console.error("failed to load events from OpenSearch", err);
+      setEvents([]);
+      setSelectedEventId(null);
     }
+  };
+
+  const loadCases = async () => {
+    try {
+      const res = await fetch("/api/cases");
+      if (!res.ok) {
+        throw new Error("Failed to load cases");
+      }
+      const data: CaseSummary[] = await res.json();
+      setCases(data);
+      if (data.length > 0) {
+        setCurrentCaseId((prev) => {
+          if (prev && data.some((c: CaseSummary) => c.case_id === prev)) {
+            return prev;
+          }
+          return data[0].case_id;
+        });
+      }
+    } catch (err) {
+      console.error("Failed to load cases", err);
+    }
+  };
+
+  const refreshCases = () => {
+    setCasesRefreshToken((token) => token + 1);
   };
 
   const handleSearchSubmit = () => {
     loadEventsFromOpenSearch();
+  };
+
+  const handleCaseSelect = (caseId: string) => {
+    setSelectedEventId(null);
+    setCurrentCaseId(caseId);
+    if (!caseId) {
+      setEvents([]);
+    }
   };
 
   function tagClass(tag: string) {
@@ -130,171 +179,147 @@ export default function App() {
   }
 
   const bgApp = darkMode ? "bg-slate-950 text-slate-50" : "bg-gray-50 text-gray-900";
-  const sidebarStyle = darkMode
-    ? "border-slate-800 bg-slate-900 text-slate-100"
-    : "border-gray-200 bg-white text-gray-900";
   const textWeak = darkMode ? "text-slate-500" : "text-gray-500";
   const textStrong = darkMode ? "text-slate-100" : "text-gray-900";
+  const iconButtonClass = darkMode
+    ? "h-8 w-8 p-0 border border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700"
+    : "h-8 w-8 p-0 border border-gray-300 bg-white text-gray-800 hover:bg-gray-100";
 
   return (
     <div className={`flex h-screen w-full font-sans ${bgApp}`}>
-      {/* SIDEBAR */}
-      <aside className={`hidden md:flex flex-col w-64 shrink-0 border-r p-5 gap-6 ${sidebarStyle}`}>
-        {/* Brand + mode toggle */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div
-              className={`flex items-center justify-center h-10 w-10 rounded-xl border ${
-                darkMode
-                  ? "bg-slate-800 border-slate-700 text-violet-300"
-                  : "bg-gray-100 border-gray-300 text-violet-700"
-              }`}
-            >
-              <Skull className="h-5 w-5" />
-            </div>
-            <div className="flex flex-col leading-tight">
-              <span className={`text-lg font-semibold tracking-tight ${textStrong}`}>dataMortem</span>
-              <span className={`text-[11px] ${textWeak}`}>DFIR Intelligence Core</span>
-            </div>
-          </div>
-
-          <Button
-            className={
-              darkMode
-                ? "h-9 w-9 p-0 border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700"
-                : "h-9 w-9 p-0 border-gray-300 bg-white text-gray-800 hover:bg-gray-100"
-            }
-            onClick={() => setDarkMode(!darkMode)}
-          >
-            {darkMode ? <Sun className="h-4 w-4 text-yellow-400" /> : <Moon className="h-4 w-4 text-indigo-600" />}
-          </Button>
-        </div>
-
-        {/* Case summary */}
-        <Card className={`${darkMode ? "bg-slate-900 border-slate-700 text-slate-300" : "bg-white border-gray-200 text-gray-700"} text-[11px]`}>
-          <CardContent className="p-3">
-            <div className="flex items-center justify-between mb-1">
-              <span className={`text-xs font-semibold ${textStrong}`}>Active Case</span>
-              <Badge
-                className={`rounded-md text-[10px] border ${
-                  darkMode ? "bg-violet-950/40 text-violet-200 border-violet-600/30" : "bg-violet-50 text-violet-700 border-violet-300"
-                }`}
-              >
-                LIVE
-              </Badge>
-            </div>
-            <div className={`${darkMode ? "text-slate-400" : "text-gray-500"} text-[10px]`}>{currentCaseId}</div>
-            <div className={`${darkMode ? "text-slate-600" : "text-gray-400"} text-[10px]`}>Full integration test - Pipeline to Explorer workflow</div>
-          </CardContent>
-        </Card>
-
-        {/* Nav */}
-        <div className="space-y-2 text-sm">
-          <div className={`uppercase text-[10px] tracking-wide flex items-center gap-2 ${textWeak}`}>Navigation</div>
-          {[
-            { key: "timeline" as const, label: "Timeline", icon: <Clock className="h-4 w-4" /> },
-            { key: "evidences" as const, label: "Evidences", icon: <HardDrive className="h-4 w-4" /> },
-            { key: "pipeline" as const, label: "Pipeline", icon: <WrenchIcon /> },
-            { key: "rules" as const, label: "Rules", icon: <ShieldCheck className="h-4 w-4" /> },
-          ].map((item) => {
-            const active = activeTab === item.key;
-            return (
-              <button
-                key={item.key}
-                onClick={() => setActiveTab(item.key)}
-                className={`w-full flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-[12px] font-medium transition-colors ${
-                  active
-                    ? darkMode
-                      ? "border-violet-600/30 bg-violet-950/40 text-violet-200"
-                      : "border-violet-300 bg-violet-50 text-violet-700"
-                    : darkMode
-                    ? "border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800"
-                    : "border-gray-300 bg-white text-gray-800 hover:bg-gray-100"
-                }`}
-              >
-                {item.icon}
-                {item.label}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="mt-auto space-y-4">
-          <div className={`text-[10px] font-medium uppercase tracking-wide flex items-center gap-2 ${textWeak}`}>
-            <Activity className={`h-3 w-3 ${darkMode ? "text-rose-400" : "text-rose-500"}`} />
-            <span className={darkMode ? "text-slate-400" : "text-gray-600"}>Highlights</span>
-          </div>
-
-          <Card className={`${darkMode ? "bg-slate-900 border-slate-700" : "bg-white border-gray-200"}`}>
-            <CardContent className={`p-3 text-[11px] leading-relaxed ${darkMode ? "text-slate-300" : "text-gray-700"}`}>
-              <div className="flex items-start justify-between">
-                <div className={`font-medium text-xs flex items-center gap-2 ${textStrong}`}>
-                  <span>Forensic Events</span>
-                  <Badge
-                    className={`rounded-md text-[10px] border ${
-                      darkMode ? "bg-emerald-600/10 text-emerald-300 border-emerald-500/30" : "bg-emerald-100 text-emerald-700 border-emerald-300"
-                    }`}
-                  >
-                    {events.length}
-                  </Badge>
-                </div>
-              </div>
-              <div className={`${darkMode ? "text-slate-400" : "text-gray-600"} mt-1`}>
-                Indexed events from OpenSearch ready for analysis and investigation.
-              </div>
-              <Button
-                className={`mt-2 h-6 px-2 text-[11px] rounded-lg ${
-                  darkMode ? "border-violet-600/30 bg-violet-950/40 text-violet-200 hover:bg-violet-900/30" : "border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100"
-                }`}
-                onClick={() => setActiveTab('timeline')}
-              >
-                View Timeline
-              </Button>
-            </CardContent>
-          </Card>
-
-          <div className={`text-[10px] border-t pt-3 ${darkMode ? "text-slate-600 border-slate-800" : "text-gray-500 border-gray-200"}`}>
-            <p className={darkMode ? "text-slate-500" : "text-gray-600"}>© 2025 dataMortem Labs</p>
-            <p className={darkMode ? "text-slate-600" : "text-gray-500"}>Forensic Intelligence Platform</p>
-          </div>
-        </div>
-      </aside>
 
       {/* MAIN */}
       <main className={`flex flex-1 min-w-0 p-4 gap-4 overflow-hidden ${darkMode ? "bg-slate-950" : "bg-gray-50"}`}>
         {/* COLONNE CENTRALE */}
         <section className="flex flex-col flex-[2] min-w-0 gap-4">
-          {/* Tabs */}
-          <div className="flex items-center gap-2 text-[11px] font-medium">
-            {[
-              { key: "timeline" as const, label: "Timeline", icon: <Clock className="h-3.5 w-3.5" /> },
-              { key: "evidences" as const, label: "Evidences", icon: <HardDrive className="h-3.5 w-3.5" /> },
-              { key: "pipeline" as const, label: "Pipeline", icon: <WrenchIcon size={14} /> },
-              { key: "rules" as const, label: "Rules", icon: <ShieldCheck className="h-3.5 w-3.5" /> },
-            ].map((item) => {
-              const active = activeTab === item.key;
-              return (
-                <Button
-                  key={item.key}
-                  className={`px-3 py-1.5 h-auto text-xs ${
-                    active
-                      ? darkMode
-                        ? "border-violet-600/30 bg-violet-950/40 text-violet-200"
-                        : "border-violet-300 bg-violet-50 text-violet-700"
-                      : darkMode
-                      ? "border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800"
-                      : "border-gray-300 bg-white text-gray-800 hover:bg-gray-100"
-                  }`}
-                  onClick={() => setActiveTab(item.key)}
-                >
-                  <span className="flex items-center gap-2">
-                    {item.icon}
-                    {item.label}
+          <header
+            className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border px-3 py-2 ${
+              darkMode
+                ? "border-slate-800 bg-slate-950/80 text-slate-100"
+                : "border-gray-200 bg-white text-gray-900"
+            }`}
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div
+                className={`flex items-center justify-center h-10 w-10 rounded-xl border ${
+                  darkMode ? "bg-slate-900 border-slate-800 text-violet-200" : "bg-violet-50 border-violet-200 text-violet-700"
+                }`}
+              >
+                <Skull className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold tracking-tight">dataMortem</span>
+                  <Badge
+                    className={`text-[10px] border ${
+                      darkMode ? "bg-emerald-500/10 text-emerald-200 border-emerald-500/30" : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                    }`}
+                  >
+                    LIVE
+                  </Badge>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <span className={`text-[10px] uppercase tracking-wide ${darkMode ? "text-slate-500" : "text-gray-500"}`}>Case</span>
+                  <select
+                    value={cases.length ? currentCaseId : ""}
+                    onChange={(e) => handleCaseSelect(e.target.value)}
+                    disabled={!cases.length}
+                    className={`rounded-lg border px-2 py-1 text-xs ${
+                      darkMode ? "border-slate-800 bg-slate-900 text-slate-100" : "border-gray-300 bg-white text-gray-900"
+                    }`}
+                  >
+                    {cases.length === 0 ? (
+                      <option value="">No cases</option>
+                    ) : (
+                      cases.map((c) => (
+                        <option key={c.case_id} value={c.case_id}>
+                          {c.case_id} {c.status ? `• ${c.status}` : ""}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                  <span className={`text-[11px] ${darkMode ? "text-slate-500" : "text-gray-500"}`}>
+                    Evidence {selectedEvidenceUid ?? "—"}
                   </span>
-                </Button>
-              );
-            })}
-          </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 text-[11px]">
+              <div
+                className={`flex items-center gap-1 rounded-lg border px-2 py-1 ${
+                  darkMode ? "border-slate-800 bg-slate-900" : "border-gray-200 bg-gray-50"
+                }`}
+              >
+                <span className={`text-[10px] uppercase tracking-wide ${darkMode ? "text-slate-500" : "text-gray-500"}`}>Events</span>
+                <span className="text-xs font-semibold">{events.length}</span>
+              </div>
+              <div
+                className={`flex items-center gap-1 rounded-lg border px-2 py-1 ${
+                  darkMode ? "border-slate-800 bg-slate-900" : "border-gray-200 bg-gray-50"
+                }`}
+              >
+                <span className={`text-[10px] uppercase tracking-wide ${darkMode ? "text-slate-500" : "text-gray-500"}`}>Focus</span>
+                <span className="text-xs font-semibold capitalize">{activeTab}</span>
+              </div>
+              <Button
+                className={`h-7 px-3 text-[11px] ${
+                  darkMode ? "border-slate-700 bg-slate-900 text-slate-200" : "border-gray-300 bg-white text-gray-800"
+                }`}
+                onClick={() => setActiveTab("evidences")}
+              >
+                Manage cases
+              </Button>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <Button
+                className={iconButtonClass}
+                onClick={() => setDarkMode(!darkMode)}
+                aria-label="Basculer le thème global"
+              >
+                {darkMode ? <Sun className="h-4 w-4 text-yellow-400" /> : <Moon className="h-4 w-4 text-indigo-600" />}
+              </Button>
+            </div>
+            <div className="flex w-full flex-wrap items-center gap-2 text-[11px] font-medium">
+              {[
+                { key: "timeline" as const, label: "Timeline", icon: <Clock className="h-3.5 w-3.5" /> },
+                { key: "evidences" as const, label: "Evidences", icon: <HardDrive className="h-3.5 w-3.5" /> },
+                { key: "pipeline" as const, label: "Pipeline", icon: <WrenchIcon size={14} /> },
+                { key: "rules" as const, label: "Rules", icon: <ShieldCheck className="h-3.5 w-3.5" /> },
+              ].map((item) => {
+                const active = activeTab === item.key;
+                return (
+                  <Button
+                    key={item.key}
+                    className={`px-3 py-1.5 h-auto text-xs ${
+                      active
+                        ? darkMode
+                          ? "border-violet-600/30 bg-violet-950/40 text-violet-200"
+                          : "border-violet-300 bg-violet-50 text-violet-700"
+                        : darkMode
+                        ? "border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-800"
+                        : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                    }`}
+                    onClick={() => setActiveTab(item.key)}
+                  >
+                    <span className="flex items-center gap-2">
+                      {item.icon}
+                      {item.label}
+                    </span>
+                  </Button>
+                );
+              })}
+              <div
+                className={`ml-auto flex items-center gap-2 rounded-lg border px-3 py-1 ${
+                  darkMode ? "border-slate-800 bg-slate-900 text-slate-300" : "border-gray-200 bg-gray-50 text-gray-700"
+                }`}
+              >
+                <Activity className="h-3.5 w-3.5 text-rose-500" />
+                <span className="text-[10px] uppercase tracking-wide">Highlights ready</span>
+              </div>
+            </div>
+          </header>
 
           {/* Barre de requête */}
           {activeTab === "timeline" && (
@@ -442,7 +467,8 @@ export default function App() {
             <EvidencesView
               darkMode={darkMode}
               currentCaseId={currentCaseId}
-              onCaseChange={setCurrentCaseId}
+              onCaseChange={handleCaseSelect}
+              onCasesUpdated={refreshCases}
             />
           )}
 
@@ -464,71 +490,82 @@ export default function App() {
         </section>
 
         {/* INSPECTOR RIGHT */}
-        <aside
-          className={`hidden lg:flex flex-col w-[22rem] shrink-0 rounded-xl border text-[12px] leading-relaxed ${
-            darkMode ? "border-slate-700 bg-slate-900 text-slate-200" : "border-gray-200 bg-white text-gray-800"
-          }`}
-        >
-          <div className="p-4 flex flex-col gap-4 min-h-0">
-            <div className="flex items-start justify-between">
-              <div>
-                <div className={`text-[10px] font-medium uppercase tracking-wide ${darkMode ? "text-slate-500" : "text-gray-500"}`}>Event Details</div>
-                <div className={`text-xs font-semibold ${darkMode ? "text-slate-100" : "text-gray-900"}`}>Row #{selectedEvent?.id ?? "-"}</div>
+        {selectedEvent ? (
+          <aside
+            className={`hidden lg:flex flex-col w-[22rem] shrink-0 rounded-xl border text-[12px] leading-relaxed ${
+              darkMode ? "border-slate-700 bg-slate-900 text-slate-200" : "border-gray-200 bg-white text-gray-800"
+            }`}
+          >
+            <div className="p-4 flex flex-col gap-4 min-h-0">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className={`text-[10px] font-medium uppercase tracking-wide ${darkMode ? "text-slate-500" : "text-gray-500"}`}>Event Details</div>
+                  <div className={`text-xs font-semibold ${darkMode ? "text-slate-100" : "text-gray-900"}`}>Row #{selectedEvent?.id ?? "-"}</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    className={`h-7 rounded-lg text-[11px] ${
+                      darkMode ? "border-violet-600/30 bg-violet-950/40 text-violet-200 hover:bg-violet-900/30" : "border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100"
+                    }`}
+                  >
+                    Add Tag
+                  </Button>
+                  <Button
+                    className={iconButtonClass}
+                    onClick={() => setSelectedEventId(null)}
+                    aria-label="Fermer le panneau détail"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
-              <Button
-                className={`h-7 rounded-lg text-[11px] ${
-                  darkMode ? "border-violet-600/30 bg-violet-950/40 text-violet-200 hover:bg-violet-900/30" : "border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100"
-                }`}
-              >
-                Add Tag
-              </Button>
-            </div>
 
-            <div
-              className={`rounded-lg border p-3 font-mono text-[11px] max-h-32 overflow-auto ${
-                darkMode ? "border-slate-700 bg-slate-900 text-slate-200" : "border-gray-300 bg-gray-50 text-gray-800"
-              }`}
-            >
-              {selectedEvent ? (
-                <>
-                  <div className="flex"><span className={`${darkMode ? "text-slate-500" : "text-gray-500"} w-24`}>@timestamp</span><span>{selectedEvent.ts}</span></div>
-                  <div className="flex"><span className={`${darkMode ? "text-slate-500" : "text-gray-500"} w-24`}>host</span><span>{selectedEvent.host}</span></div>
-                  <div className="flex"><span className={`${darkMode ? "text-slate-500" : "text-gray-500"} w-24`}>user</span><span>{selectedEvent.user}</span></div>
-                  <div className="flex"><span className={`${darkMode ? "text-slate-500" : "text-gray-500"} w-24`}>source</span><span>{selectedEvent.source}</span></div>
-                  <div className="flex"><span className={`${darkMode ? "text-slate-500" : "text-gray-500"} w-24`}>score</span><span>{selectedEvent.score}</span></div>
-                </>
-              ) : (
-                <div className={`${darkMode ? "text-slate-500" : "text-gray-500"} italic`}>Select an event…</div>
-              )}
-            </div>
-
-            <div className="flex flex-col gap-2 min-h-0 flex-1 overflow-hidden">
-              <div className={`text-[10px] font-medium uppercase tracking-wide ${darkMode ? "text-slate-500" : "text-gray-500"}`}>Raw / _source</div>
               <div
-                className={`rounded-lg border p-3 font-mono text-[10px] flex-1 overflow-auto leading-relaxed whitespace-pre-wrap ${
+                className={`rounded-lg border p-3 font-mono text-[11px] max-h-32 overflow-auto ${
                   darkMode ? "border-slate-700 bg-slate-900 text-slate-200" : "border-gray-300 bg-gray-50 text-gray-800"
                 }`}
               >
                 {selectedEvent ? (
-                  JSON.stringify(
-                    {
-                      "@timestamp": selectedEvent.ts,
-                      message: selectedEvent.message,
-                      host: selectedEvent.host,
-                      user: selectedEvent.user,
-                      tags: selectedEvent.tags,
-                      score: selectedEvent.score,
-                    },
-                    null,
-                    2
-                  )
+                  <>
+                    <div className="flex"><span className={`${darkMode ? "text-slate-500" : "text-gray-500"} w-24`}>@timestamp</span><span>{selectedEvent.ts}</span></div>
+                    <div className="flex"><span className={`${darkMode ? "text-slate-500" : "text-gray-500"} w-24`}>host</span><span>{selectedEvent.host}</span></div>
+                    <div className="flex"><span className={`${darkMode ? "text-slate-500" : "text-gray-500"} w-24`}>user</span><span>{selectedEvent.user}</span></div>
+                    <div className="flex"><span className={`${darkMode ? "text-slate-500" : "text-gray-500"} w-24`}>source</span><span>{selectedEvent.source}</span></div>
+                    <div className="flex"><span className={`${darkMode ? "text-slate-500" : "text-gray-500"} w-24`}>score</span><span>{selectedEvent.score}</span></div>
+                  </>
                 ) : (
-                  <span className={`${darkMode ? "text-slate-500" : "text-gray-500"} italic`}>No event selected.</span>
+                  <div className={`${darkMode ? "text-slate-500" : "text-gray-500"} italic`}>Select an event…</div>
                 )}
               </div>
+
+              <div className="flex flex-col gap-2 min-h-0 flex-1 overflow-hidden">
+                <div className={`text-[10px] font-medium uppercase tracking-wide ${darkMode ? "text-slate-500" : "text-gray-500"}`}>Raw / _source</div>
+                <div
+                  className={`rounded-lg border p-3 font-mono text-[10px] flex-1 overflow-auto leading-relaxed whitespace-pre-wrap ${
+                    darkMode ? "border-slate-700 bg-slate-900 text-slate-200" : "border-gray-300 bg-gray-50 text-gray-800"
+                  }`}
+                >
+                  {selectedEvent ? (
+                    JSON.stringify(
+                      {
+                        "@timestamp": selectedEvent.ts,
+                        message: selectedEvent.message,
+                        host: selectedEvent.host,
+                        user: selectedEvent.user,
+                        tags: selectedEvent.tags,
+                        score: selectedEvent.score,
+                      },
+                      null,
+                      2
+                    )
+                  ) : (
+                    <span className={`${darkMode ? "text-slate-500" : "text-gray-500"} italic`}>No event selected.</span>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
-        </aside>
+          </aside>
+        ) : null}
       </main>
     </div>
   );

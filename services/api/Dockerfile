@@ -19,6 +19,9 @@ COPY pyproject.toml uv.lock ./
 # Install Python dependencies with uv
 RUN uv sync --frozen
 
+# Ensure dissect.target full extra is available for forensic parsing (MFT, registry, etc.)
+RUN uv pip install --no-cache-dir "dissect"
+
 # Copy application code
 COPY . .
 

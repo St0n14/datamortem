@@ -23,6 +23,12 @@ class CaseIn(BaseModel):
     case_id: str
     note: Optional[str] = None
 
+
+class CaseUpdate(BaseModel):
+    note: Optional[str] = None
+    status: Optional[str] = None
+
+
 class CaseOut(BaseModel):
     case_id: str
     status: str
@@ -55,3 +61,38 @@ def create_case(payload: CaseIn, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(c)
     return c
+
+
+@router.get("/cases/{case_id}", response_model=CaseOut)
+def get_case(case_id: str, db: Session = Depends(get_db)):
+    case = db.query(Case).filter_by(case_id=case_id).one_or_none()
+    if not case:
+        raise HTTPException(status_code=404, detail="case not found")
+    return case
+
+
+@router.patch("/cases/{case_id}", response_model=CaseOut)
+def update_case(case_id: str, payload: CaseUpdate, db: Session = Depends(get_db)):
+    case = db.query(Case).filter_by(case_id=case_id).one_or_none()
+    if not case:
+        raise HTTPException(status_code=404, detail="case not found")
+
+    if payload.note is not None:
+        case.note = payload.note
+    if payload.status is not None:
+        case.status = payload.status
+
+    db.commit()
+    db.refresh(case)
+    return case
+
+
+@router.delete("/cases/{case_id}", status_code=204)
+def delete_case(case_id: str, db: Session = Depends(get_db)):
+    case = db.query(Case).filter_by(case_id=case_id).one_or_none()
+    if not case:
+        raise HTTPException(status_code=404, detail="case not found")
+
+    db.delete(case)
+    db.commit()
+    return None

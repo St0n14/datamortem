@@ -31,6 +31,12 @@ MODULE_DEFINITIONS = [
         "tool": "parse_dissect",
         "enabled": True,
     },
+    {
+        "name": "dissect_mft",
+        "description": "Extract and normalize $MFT artifacts from Velociraptor collectors using dissect.target",
+        "tool": "dissect_mft",
+        "enabled": True,
+    },
     # tu pourras en rajouter ici plus tard
 ]
 
