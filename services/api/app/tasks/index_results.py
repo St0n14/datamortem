@@ -7,7 +7,7 @@ from ..celery_app import celery_app
 from ..db import SessionLocal
 from ..models import TaskRun, Evidence, Case
 from ..opensearch.client import get_opensearch_client
-from ..opensearch.indexer import index_parquet_results, index_csv_results
+from ..opensearch.indexer import index_parquet_results, index_csv_results, index_jsonl_results
 from ..config import settings
 import logging
 import os
@@ -93,6 +93,16 @@ def index_results_task(
                 evidence_uid=evidence_uid,
                 parser_name=parser_name,
                 csv_path=file_path,
+                batch_size=settings.dm_opensearch_batch_size,
+                case_name=case_name
+            )
+        elif file_ext == ".jsonl":
+            stats = index_jsonl_results(
+                client=client,
+                case_id=case_id,
+                evidence_uid=evidence_uid,
+                parser_name=parser_name,
+                jsonl_path=file_path,
                 batch_size=settings.dm_opensearch_batch_size,
                 case_name=case_name
             )

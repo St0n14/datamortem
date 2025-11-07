@@ -204,6 +204,135 @@ def index_csv_results(
     return stats
 
 
+def index_jsonl_results(
+    client: OpenSearch,
+    case_id: str,
+    evidence_uid: str,
+    parser_name: str,
+    jsonl_path: str,
+    batch_size: int = 500,
+    case_name: Optional[str] = None
+) -> dict:
+    """
+    Lit un fichier JSONL (JSON Lines) et l'indexe dans OpenSearch.
+
+    Args:
+        client: OpenSearch client instance
+        case_id: Case identifier
+        evidence_uid: Evidence identifier
+        parser_name: Parser name
+        jsonl_path: Path to JSONL file (one JSON object per line)
+        batch_size: Bulk indexing batch size
+        case_name: Optional case name
+
+    Returns:
+        Dict with stats: {indexed: int, failed: int, errors: list, total_rows: int}
+    """
+    import json
+    from .index_manager import get_index_name, create_index_if_not_exists
+
+    # Vérifie que le fichier existe
+    if not os.path.exists(jsonl_path):
+        raise FileNotFoundError(f"JSONL file not found: {jsonl_path}")
+
+    # S'assure que l'index existe
+    index_name = get_index_name(case_id)
+    create_index_if_not_exists(client, case_id)
+
+    logger.info(f"Starting JSONL indexation: {jsonl_path} -> {index_name}")
+
+    # Stats
+    stats = {
+        "indexed": 0,
+        "failed": 0,
+        "errors": [],
+        "total_rows": 0
+    }
+
+    # Génère les documents depuis le fichier JSONL
+    def generate_docs() -> Iterator[Dict]:
+        with open(jsonl_path, 'r', encoding='utf-8') as f:
+            for line_num, line in enumerate(f, 1):
+                stats["total_rows"] += 1
+                line = line.strip()
+                if not line:
+                    continue
+
+                try:
+                    # Parse le JSON
+                    doc = json.loads(line)
+
+                    # Les événements générés ont déjà les bons champs
+                    # Mais on enrichit quand même si nécessaire
+                    if "case" not in doc:
+                        doc["case"] = {}
+                    if "id" not in doc["case"]:
+                        doc["case"]["id"] = case_id
+                    if case_name and "name" not in doc.get("case", {}):
+                        doc["case"]["name"] = case_name
+
+                    if "evidence" not in doc:
+                        doc["evidence"] = {"uid": evidence_uid}
+
+                    if "source" not in doc:
+                        doc["source"] = {}
+                    if "parser" not in doc.get("source", {}):
+                        doc["source"]["parser"] = parser_name
+
+                    doc["indexed_at"] = datetime.utcnow().isoformat()
+
+                    # Vérifie @timestamp
+                    if "@timestamp" not in doc:
+                        logger.warning(f"Line {line_num}: Missing @timestamp, using indexed_at")
+                        doc["@timestamp"] = doc["indexed_at"]
+
+                    yield {
+                        "_index": index_name,
+                        "_source": doc
+                    }
+
+                except json.JSONDecodeError as e:
+                    logger.warning(f"Line {line_num}: Invalid JSON - {e}")
+                    stats["failed"] += 1
+                    if len(stats["errors"]) < 10:
+                        stats["errors"].append(f"Line {line_num}: Invalid JSON")
+                except Exception as e:
+                    logger.warning(f"Line {line_num}: Error preparing document - {e}")
+                    stats["failed"] += 1
+                    if len(stats["errors"]) < 10:
+                        stats["errors"].append(f"Line {line_num}: {str(e)}")
+
+    # Bulk indexing
+    try:
+        success_count, failed_items = helpers.bulk(
+            client,
+            generate_docs(),
+            chunk_size=batch_size,
+            raise_on_error=False,
+            stats_only=False
+        )
+
+        stats["indexed"] = success_count
+
+        if failed_items:
+            stats["failed"] += len(failed_items)
+            for item in failed_items[:10]:
+                if "error" in item:
+                    stats["errors"].append(str(item["error"]))
+            logger.error(f"Failed to index {len(failed_items)} documents")
+
+        logger.info(
+            f"JSONL indexation complete: {success_count} indexed, "
+            f"{len(failed_items) if failed_items else 0} failed from {stats['total_rows']} rows"
+        )
+
+    except Exception as e:
+        logger.error(f"Bulk indexing failed: {e}")
+        stats["errors"].append(f"Bulk operation error: {str(e)}")
+
+    return stats
+
+
 def delete_case_documents(client: OpenSearch, case_id: str) -> dict:
     """
     Supprime tous les documents d'un case.

@@ -118,10 +118,10 @@ def search_events(
     must_clauses = []
 
     # Query string principale
-    if query and query.strip():
+    if query and query.strip() and query.strip() != "*":
         must_clauses.append(build_query_string_query(query))
     else:
-        # Si pas de query, match_all
+        # Si pas de query ou query="*", match_all
         must_clauses.append({"match_all": {}})
 
     # Filtres additionnels

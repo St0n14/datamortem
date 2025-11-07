@@ -19,6 +19,18 @@ MODULE_DEFINITIONS = [
         "tool": "sample_long_task",
         "enabled": True,
     },
+    {
+        "name": "generate_test_events",
+        "description": "Generate 100 forensic test events (process, network, file) in JSONL format",
+        "tool": "generate_test_events",
+        "enabled": True,
+    },
+    {
+        "name": "parse_dissect",
+        "description": "Parse Velociraptor collector with dissect forensic framework (processes, registry, timeline, browser)",
+        "tool": "parse_dissect",
+        "enabled": True,
+    },
     # tu pourras en rajouter ici plus tard
 ]
 

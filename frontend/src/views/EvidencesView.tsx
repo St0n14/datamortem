@@ -1,0 +1,464 @@
+import { useState, useEffect } from "react";
+import { Card, CardContent } from "../components/ui/Card";
+import { Button } from "../components/ui/Button";
+import { Input } from "../components/ui/Input";
+import { Badge } from "../components/ui/Badge";
+import { Plus, HardDrive, Trash2, X } from "lucide-react";
+
+interface Evidence {
+  id: number;
+  evidence_uid: string;
+  case_id: string;
+  local_path: string | null;
+  added_at_utc: string;
+}
+
+interface Case {
+  case_id: string;
+  status: string;
+  created_at_utc: string;
+  note: string | null;
+}
+
+interface EvidencesViewProps {
+  darkMode: boolean;
+  currentCaseId: string;
+  onCaseChange?: (caseId: string) => void;
+}
+
+export function EvidencesView({ darkMode, currentCaseId, onCaseChange }: EvidencesViewProps) {
+  const [evidences, setEvidences] = useState<Evidence[]>([]);
+  const [cases, setCases] = useState<Case[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showAddCaseModal, setShowAddCaseModal] = useState(false);
+
+  // Form state for new evidence
+  const [newEvidence, setNewEvidence] = useState({
+    evidence_uid: "",
+    case_id: currentCaseId,
+    local_path: "",
+  });
+
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  // Form state for new case
+  const [newCase, setNewCase] = useState({
+    case_id: "",
+    note: "",
+  });
+
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadCases();
+    loadEvidences();
+  }, [currentCaseId]);
+
+  const loadCases = async () => {
+    try {
+      const res = await fetch("/api/cases");
+      if (!res.ok) throw new Error("Failed to load cases");
+      const data = await res.json();
+      setCases(data);
+    } catch (err) {
+      console.error("Failed to load cases:", err);
+    }
+  };
+
+  const loadEvidences = async () => {
+    setLoading(true);
+    try {
+      const url = currentCaseId
+        ? `/api/evidences?case_id=${currentCaseId}`
+        : `/api/evidences`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to load evidences");
+      const data = await res.json();
+      setEvidences(data);
+    } catch (err) {
+      console.error("Failed to load evidences:", err);
+      setError("Failed to load evidences");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddEvidence = async () => {
+    setError(null);
+    setSuccess(null);
+
+    if (!newEvidence.evidence_uid || !newEvidence.case_id) {
+      setError("Evidence UID and Case ID are required");
+      return;
+    }
+
+    if (!selectedFile) {
+      setError("Please select a Velociraptor collector ZIP file");
+      return;
+    }
+
+    setUploading(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+      formData.append("evidence_uid", newEvidence.evidence_uid);
+      formData.append("case_id", newEvidence.case_id);
+
+      const res = await fetch("/api/evidences/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.detail || "Failed to upload evidence");
+      }
+
+      setSuccess("Evidence uploaded and extracted successfully!");
+      setShowAddModal(false);
+      setNewEvidence({
+        evidence_uid: "",
+        case_id: currentCaseId,
+        local_path: "",
+      });
+      setSelectedFile(null);
+      loadEvidences();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleAddCase = async () => {
+    setError(null);
+    setSuccess(null);
+
+    if (!newCase.case_id) {
+      setError("Case ID is required");
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/cases", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newCase),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.detail || "Failed to create case");
+      }
+
+      setSuccess("Case created successfully!");
+      setShowAddCaseModal(false);
+      setNewCase({ case_id: "", note: "" });
+      loadCases();
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const formatDate = (dateStr: string) => {
+    return new Date(dateStr).toLocaleString();
+  };
+
+  const bgCard = darkMode ? "bg-slate-900 border-slate-700" : "bg-white border-gray-200";
+  const textStrong = darkMode ? "text-slate-100" : "text-gray-900";
+  const textWeak = darkMode ? "text-slate-400" : "text-gray-500";
+  const inputBg = darkMode ? "bg-slate-800 border-slate-700 text-slate-200" : "bg-white border-gray-300 text-gray-900";
+
+  return (
+    <div className="flex flex-col gap-4 h-full">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className={`text-2xl font-bold ${textStrong}`}>Evidence Management</h2>
+          <p className={`text-sm ${textWeak}`}>Manage forensic evidences for your investigations</p>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            onClick={() => setShowAddCaseModal(true)}
+            className={`${darkMode ? "border-sky-600/30 bg-sky-900/20 text-sky-200 hover:bg-sky-900/30" : "border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100"}`}
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            New Case
+          </Button>
+          <Button
+            onClick={() => setShowAddModal(true)}
+            className={`${darkMode ? "border-violet-600/30 bg-violet-950/40 text-violet-200 hover:bg-violet-900/30" : "border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100"}`}
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Add Evidence
+          </Button>
+        </div>
+      </div>
+
+      {/* Alerts */}
+      {error && (
+        <Card className={`border-rose-600/30 ${darkMode ? "bg-rose-950/20" : "bg-rose-50"}`}>
+          <CardContent className="p-3 flex items-center justify-between">
+            <span className={darkMode ? "text-rose-300" : "text-rose-700"}>{error}</span>
+            <button onClick={() => setError(null)} className={darkMode ? "text-rose-400 hover:text-rose-300" : "text-rose-600 hover:text-rose-700"}>
+              <X className="h-4 w-4" />
+            </button>
+          </CardContent>
+        </Card>
+      )}
+
+      {success && (
+        <Card className={`border-emerald-600/30 ${darkMode ? "bg-emerald-950/20" : "bg-emerald-50"}`}>
+          <CardContent className="p-3 flex items-center justify-between">
+            <span className={darkMode ? "text-emerald-300" : "text-emerald-700"}>{success}</span>
+            <button onClick={() => setSuccess(null)} className={darkMode ? "text-emerald-400 hover:text-emerald-300" : "text-emerald-600 hover:text-emerald-700"}>
+              <X className="h-4 w-4" />
+            </button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Case Selector */}
+      <Card className={bgCard}>
+        <CardContent className="p-4">
+          <div className="flex items-center gap-4">
+            <label className={`text-sm font-medium ${textStrong}`}>Active Case:</label>
+            <select
+              value={currentCaseId}
+              onChange={(e) => onCaseChange?.(e.target.value)}
+              className={`px-3 py-2 rounded-lg border text-sm ${inputBg}`}
+            >
+              {cases.map((c) => (
+                <option key={c.case_id} value={c.case_id}>
+                  {c.case_id} - {c.status}
+                </option>
+              ))}
+            </select>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Evidences List */}
+      <Card className={`flex-1 ${bgCard}`}>
+        <CardContent className="p-0">
+          <div className={`border-b px-4 py-3 ${darkMode ? "border-slate-700" : "border-gray-200"}`}>
+            <h3 className={`font-semibold ${textStrong}`}>
+              Evidences {currentCaseId && `for ${currentCaseId}`}
+            </h3>
+          </div>
+
+          {loading ? (
+            <div className="p-8 text-center">
+              <p className={textWeak}>Loading evidences...</p>
+            </div>
+          ) : evidences.length === 0 ? (
+            <div className="p-8 text-center">
+              <HardDrive className={`h-12 w-12 mx-auto mb-3 ${textWeak}`} />
+              <p className={`${textWeak} mb-4`}>No evidences found for this case</p>
+              <Button
+                onClick={() => setShowAddModal(true)}
+                className={`${darkMode ? "border-violet-600/30 bg-violet-950/40 text-violet-200" : "border-violet-300 bg-violet-50 text-violet-700"}`}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add First Evidence
+              </Button>
+            </div>
+          ) : (
+            <div className="overflow-auto">
+              <table className="w-full text-sm">
+                <thead className={`border-b text-xs uppercase ${darkMode ? "border-slate-700 bg-slate-900 text-slate-500" : "border-gray-200 bg-gray-50 text-gray-500"}`}>
+                  <tr>
+                    <th className="px-4 py-3 text-left">Evidence UID</th>
+                    <th className="px-4 py-3 text-left">Case</th>
+                    <th className="px-4 py-3 text-left">Local Path</th>
+                    <th className="px-4 py-3 text-left">Added At</th>
+                    <th className="px-4 py-3 text-left">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className={darkMode ? "divide-y divide-slate-800" : "divide-y divide-gray-100"}>
+                  {evidences.map((ev) => (
+                    <tr key={ev.id} className={darkMode ? "hover:bg-slate-800/50" : "hover:bg-gray-50"}>
+                      <td className={`px-4 py-3 font-mono font-semibold ${textStrong}`}>
+                        {ev.evidence_uid}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge className={`${darkMode ? "bg-violet-950/40 text-violet-200 border-violet-600/30" : "bg-violet-50 text-violet-700 border-violet-300"}`}>
+                          {ev.case_id}
+                        </Badge>
+                      </td>
+                      <td className={`px-4 py-3 font-mono text-xs ${textWeak}`}>
+                        {ev.local_path || "-"}
+                      </td>
+                      <td className={`px-4 py-3 text-xs ${textWeak}`}>
+                        {formatDate(ev.added_at_utc)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Button
+                          className={`h-8 px-2 text-xs ${darkMode ? "border-rose-600/30 bg-rose-950/20 text-rose-300 hover:bg-rose-900/30" : "border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100"}`}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Add Evidence Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <Card className={`w-full max-w-lg ${bgCard}`}>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className={`text-lg font-semibold ${textStrong}`}>Add New Evidence</h3>
+                <button onClick={() => setShowAddModal(false)} className={textWeak}>
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className={`block text-sm font-medium mb-1 ${textStrong}`}>
+                    Evidence UID *
+                  </label>
+                  <Input
+                    value={newEvidence.evidence_uid}
+                    onChange={(e) => setNewEvidence({ ...newEvidence, evidence_uid: e.target.value })}
+                    placeholder="e.g., DISK_001, MEMORY_DUMP_001"
+                    className={inputBg}
+                  />
+                </div>
+
+                <div>
+                  <label className={`block text-sm font-medium mb-1 ${textStrong}`}>
+                    Case ID *
+                  </label>
+                  <select
+                    value={newEvidence.case_id}
+                    onChange={(e) => setNewEvidence({ ...newEvidence, case_id: e.target.value })}
+                    className={`w-full px-3 py-2 rounded-lg border ${inputBg}`}
+                  >
+                    {cases.map((c) => (
+                      <option key={c.case_id} value={c.case_id}>
+                        {c.case_id}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className={`block text-sm font-medium mb-1 ${textStrong}`}>
+                    Velociraptor Offline Collector (ZIP) *
+                  </label>
+                  <div className={`border-2 border-dashed rounded-lg p-4 ${darkMode ? "border-slate-700 bg-slate-800" : "border-gray-300 bg-gray-50"}`}>
+                    <input
+                      type="file"
+                      accept=".zip"
+                      onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                      className="hidden"
+                      id="file-upload"
+                    />
+                    <label
+                      htmlFor="file-upload"
+                      className="cursor-pointer flex flex-col items-center gap-2"
+                    >
+                      <HardDrive className={`h-8 w-8 ${textWeak}`} />
+                      <span className={`text-sm ${textStrong}`}>
+                        {selectedFile ? selectedFile.name : "Click to select ZIP file"}
+                      </span>
+                      <span className={`text-xs ${textWeak}`}>
+                        Only Velociraptor offline collector ZIP files
+                      </span>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="flex gap-2 pt-4">
+                  <Button
+                    onClick={handleAddEvidence}
+                    disabled={uploading}
+                    className={`flex-1 ${uploading ? "opacity-50 cursor-not-allowed" : ""} ${darkMode ? "border-violet-600/30 bg-violet-950/40 text-violet-200 hover:bg-violet-900/30" : "border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100"}`}
+                  >
+                    {uploading ? "Uploading..." : "Upload Evidence"}
+                  </Button>
+                  <Button
+                    onClick={() => setShowAddModal(false)}
+                    className={`${darkMode ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800" : "border-gray-300 bg-white text-gray-800 hover:bg-gray-100"}`}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Add Case Modal */}
+      {showAddCaseModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <Card className={`w-full max-w-lg ${bgCard}`}>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className={`text-lg font-semibold ${textStrong}`}>Create New Case</h3>
+                <button onClick={() => setShowAddCaseModal(false)} className={textWeak}>
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className={`block text-sm font-medium mb-1 ${textStrong}`}>
+                    Case ID *
+                  </label>
+                  <Input
+                    value={newCase.case_id}
+                    onChange={(e) => setNewCase({ ...newCase, case_id: e.target.value })}
+                    placeholder="e.g., INC-2025-001, APT_Investigation"
+                    className={inputBg}
+                  />
+                </div>
+
+                <div>
+                  <label className={`block text-sm font-medium mb-1 ${textStrong}`}>
+                    Note
+                  </label>
+                  <textarea
+                    value={newCase.note}
+                    onChange={(e) => setNewCase({ ...newCase, note: e.target.value })}
+                    placeholder="Brief description of the investigation"
+                    rows={3}
+                    className={`w-full px-3 py-2 rounded-lg border resize-none ${inputBg}`}
+                  />
+                </div>
+
+                <div className="flex gap-2 pt-4">
+                  <Button
+                    onClick={handleAddCase}
+                    className={`flex-1 ${darkMode ? "border-sky-600/30 bg-sky-900/20 text-sky-200 hover:bg-sky-900/30" : "border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100"}`}
+                  >
+                    Create Case
+                  </Button>
+                  <Button
+                    onClick={() => setShowAddCaseModal(false)}
+                    className={`${darkMode ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800" : "border-gray-300 bg-white text-gray-800 hover:bg-gray-100"}`}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}

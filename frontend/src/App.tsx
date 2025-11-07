@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { PipelineView } from "./components/PipelineView";
+import { EvidencesView } from "./views/EvidencesView";
 import {
   Skull,
   Sun,
@@ -10,6 +11,7 @@ import {
   Activity,
   ShieldCheck,
   Wrench,
+  HardDrive,
 } from "lucide-react";
 
 import { Card, CardContent } from "./components/ui/Card";
@@ -31,10 +33,10 @@ type EventRow = {
 export default function App() {
   const [darkMode, setDarkMode] = useState(true);
   const [activeTab, setActiveTab] =
-    useState<"timeline" | "pipeline" | "rules">("timeline");
+    useState<"timeline" | "pipeline" | "rules" | "evidences">("timeline");
 
-  const [currentCaseId] = useState<string>("integration_test_2025");
-  const [selectedEvidenceUid] = useState<string | null>("evidence_integration_test_2025");
+  const [currentCaseId, setCurrentCaseId] = useState<string>("test_pc_001");
+  const [selectedEvidenceUid] = useState<string | null>("evidence_pc_001");
 
   const [events, setEvents] = useState<EventRow[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
@@ -81,12 +83,12 @@ export default function App() {
       // Convert OpenSearch hits to EventRow format
       const eventRows: EventRow[] = data.hits.map((hit: any, index: number) => ({
         id: index + 1,
-        ts: hit['@timestamp'] || hit._source?.['@timestamp'] || '-',
-        source: hit['source.parser'] || hit._source?.['source']?.['parser'] || hit['event.type'] || hit._source?.['event']?.['type'] || 'unknown',
-        message: hit['message'] || hit._source?.['message'] || hit['file.path'] || hit._source?.['file']?.['path'] || hit['process.command_line'] || hit._source?.['process']?.['command_line'] || 'No message',
-        host: hit['host.hostname'] || hit._source?.['host']?.['hostname'] || '-',
-        user: hit['user.name'] || hit._source?.['user']?.['name'] || '-',
-        tags: [], // We can add tags later based on event.type or other fields
+        ts: hit['@timestamp'] || '-',
+        source: hit.source?.parser || hit.event?.type || 'unknown',
+        message: hit.message || hit.file?.path || hit.process?.command_line || hit.event?.action || 'No message',
+        host: hit.host?.hostname || '-',
+        user: hit.user?.name || '-',
+        tags: hit.event?.type ? [hit.event.type] : [],
         score: Math.round((hit._score || 0) * 10) / 10,
       }));
 
@@ -191,6 +193,7 @@ export default function App() {
           <div className={`uppercase text-[10px] tracking-wide flex items-center gap-2 ${textWeak}`}>Navigation</div>
           {[
             { key: "timeline" as const, label: "Timeline", icon: <Clock className="h-4 w-4" /> },
+            { key: "evidences" as const, label: "Evidences", icon: <HardDrive className="h-4 w-4" /> },
             { key: "pipeline" as const, label: "Pipeline", icon: <WrenchIcon /> },
             { key: "rules" as const, label: "Rules", icon: <ShieldCheck className="h-4 w-4" /> },
           ].map((item) => {
@@ -265,6 +268,7 @@ export default function App() {
           <div className="flex items-center gap-2 text-[11px] font-medium">
             {[
               { key: "timeline" as const, label: "Timeline", icon: <Clock className="h-3.5 w-3.5" /> },
+              { key: "evidences" as const, label: "Evidences", icon: <HardDrive className="h-3.5 w-3.5" /> },
               { key: "pipeline" as const, label: "Pipeline", icon: <WrenchIcon size={14} /> },
               { key: "rules" as const, label: "Rules", icon: <ShieldCheck className="h-3.5 w-3.5" /> },
             ].map((item) => {
@@ -432,6 +436,14 @@ export default function App() {
                 </CardContent>
               </Card>
             </>
+          )}
+
+          {activeTab === "evidences" && (
+            <EvidencesView
+              darkMode={darkMode}
+              currentCaseId={currentCaseId}
+              onCaseChange={setCurrentCaseId}
+            />
           )}
 
           {activeTab === "pipeline" && (

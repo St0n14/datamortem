@@ -13,6 +13,8 @@ celery_app = Celery(
         "app.tasks.parse_mft",
         "app.tasks.index_results",   # OpenSearch indexation task
         "app.tasks.sample_long_task",
+        "app.tasks.generate_test_events",  # Test event generator
+        "app.tasks.parse_dissect",   # Dissect forensic parser
         # "app.tasks.parse_registry",
         # "app.tasks.parse_users",
     ],

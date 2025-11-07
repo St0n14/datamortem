@@ -62,8 +62,19 @@ def parse_mft_task(self, evidence_uid: str, task_run_id: int):
         run.status = "success"
         run.ended_at_utc = datetime.utcnow()
         run.output_path = output_path
-        run.progress_message = "done"
+        run.progress_message = "done, launching auto-indexation"
         db.commit()
+
+        # Auto-indexation dans OpenSearch
+        from ..tasks.index_results import index_results_task
+        parser_name = "parse_mft"
+
+        index_results_task.delay(
+            task_run_id=task_run_id,
+            file_path=output_path,
+            parser_name=parser_name
+        )
+
     except Exception as e:
         run.status = "error"
         run.ended_at_utc = datetime.utcnow()
