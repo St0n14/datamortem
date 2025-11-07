@@ -1,74 +1,112 @@
-from fastapi import APIRouter, Depends, UploadFile, Form, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from typing import List, Optional
 from sqlalchemy.orm import Session
 from datetime import datetime
-import hashlib
-import os
-import uuid
 
-from ..db import get_db
+from ..db import SessionLocal
 from ..models import Evidence, Case
 
 router = APIRouter()
 
-# adapte ce chemin à TA machine
-EVIDENCE_MASTER_ROOT = "/home/braguette/dataMortem/storage/evidence-master"
+# ------------------------
+# DB session dependency
+# ------------------------
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
-@router.post("/register")
-async def register_evidence(
-    case_id: str = Form(...),
-    file: UploadFile = Form(...),
+
+# ------------------------
+# Schemas I/O
+# ------------------------
+
+class EvidenceIn(BaseModel):
+    evidence_uid: str          # ex: "WKST-FA-22_DISK"
+    case_id: str               # ex: "INC-2025-TEST-lateral"
+    local_path: Optional[str] = None  # ex: "/mnt/disk_images/WKST-FA-22.dd"
+
+    # NOTE :
+    # Pas de hostname, pas de type
+    # parce que ton modèle SQLAlchemy ne les a pas.
+
+
+class EvidenceOut(BaseModel):
+    id: int
+    evidence_uid: str
+    case_id: str
+    local_path: Optional[str]
+    added_at_utc: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# ------------------------
+# Routes
+# ------------------------
+
+@router.get("/evidences", response_model=List[EvidenceOut])
+def list_evidences(
+    case_id: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
-    # 1. Vérifier le case
-    case_obj = db.query(Case).filter_by(case_id=case_id).first()
-    if not case_obj:
-        raise HTTPException(status_code=404, detail="Case not found")
+    """
+    Retourne toutes les evidences, ou seulement celles liées à un case_id donné.
+    """
+    q = db.query(Evidence)
+    if case_id:
+        q = q.filter(Evidence.case_id == case_id)
+    rows = q.all()
+    return rows
 
-    # 2. Générer ID d'evidence
-    evidence_uid = "EV-" + uuid.uuid4().hex[:12].upper()
 
-    # 3. Créer dossier de stockage maître
-    ev_dir = os.path.join(EVIDENCE_MASTER_ROOT, evidence_uid)
-    os.makedirs(ev_dir, exist_ok=True)
+@router.post("/evidences", response_model=EvidenceOut, status_code=201)
+def create_evidence(
+    payload: EvidenceIn,
+    db: Session = Depends(get_db),
+):
+    """
+    Déclare une nouvelle evidence dans une investigation.
+    """
 
-    dest_path = os.path.join(ev_dir, file.filename)
+    # 1. Vérifier que la case existe
+    parent_case = (
+        db.query(Case)
+        .filter_by(case_id=payload.case_id)
+        .first()
+    )
+    if not parent_case:
+        raise HTTPException(
+            status_code=400,
+            detail="case_id does not exist"
+        )
 
-    # 4. Sauvegarder en stream + SHA256
-    sha256_hash = hashlib.sha256()
-    size_bytes = 0
-    with open(dest_path, "wb") as out:
-        while True:
-            chunk = await file.read(1024 * 1024)
-            if not chunk:
-                break
-            sha256_hash.update(chunk)
-            size_bytes += len(chunk)
-            out.write(chunk)
+    # 2. Vérifier que evidence_uid n'est pas déjà pris
+    existing = (
+        db.query(Evidence)
+        .filter_by(evidence_uid=payload.evidence_uid)
+        .first()
+    )
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail="evidence_uid already exists"
+        )
 
-    sha256_val = sha256_hash.hexdigest()
-
-    # 5. Insérer Evidence en DB
+    # 3. Créer l'Evidence
     ev = Evidence(
-        evidence_uid=evidence_uid,
-        case_id_fk=case_obj.id,
-        original_filename=file.filename,
-        size_bytes=size_bytes,
-        sha1="TODO",
-        sha256=sha256_val,
-        local_path=dest_path,  # <-- NOUVEAU: on garde où est le .vmdk
-        status="registered",
-        created_at_utc=datetime.utcnow(),
+        evidence_uid=payload.evidence_uid,
+        case_id=payload.case_id,
+        local_path=payload.local_path,
+        # added_at_utc va se remplir via default=datetime.utcnow dans le modèle
     )
 
     db.add(ev)
     db.commit()
     db.refresh(ev)
 
-    return {
-        "evidence_uid": ev.evidence_uid,
-        "case_id": case_id,
-        "sha256": ev.sha256,
-        "size_bytes": ev.size_bytes,
-        "status": ev.status,
-        "stored_path": ev.local_path,
-    }
+    return ev

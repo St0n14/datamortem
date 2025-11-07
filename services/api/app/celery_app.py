@@ -1,17 +1,34 @@
 from celery import Celery
 from .config import settings
 
-broker_url = settings.REDIS_URL or "memory://"
-backend_url = settings.REDIS_URL or "rpc://"
+# Configuration Celery depuis settings
+# En dev: peut être memory:// (eager mode) ou redis:// (vrai worker)
+# En prod: redis:// avec worker dédié
 
 celery_app = Celery(
-    "datamortem",
-    broker=broker_url,
-    backend=backend_url,
+    "dataMortem",
+    broker=settings.dm_celery_broker,
+    backend=settings.dm_celery_backend,
+    include=[
+        "app.tasks.parse_mft",
+        "app.tasks.index_results",   # OpenSearch indexation task
+        "app.tasks.sample_long_task",
+        # "app.tasks.parse_registry",
+        # "app.tasks.parse_users",
+    ],
 )
 
-celery_app.conf.task_routes = {
-    "parse_mft_task": {"queue": "extract"},
-    "parse_registry_task": {"queue": "extract"},
-    "parse_users_task": {"queue": "extract"},
-}
+# Détermine si on est en mode eager (memory://) ou worker (redis://)
+is_eager_mode = settings.dm_celery_broker.startswith("memory://")
+
+celery_app.conf.update(
+    task_serializer="json",
+    accept_content=["json"],
+    result_serializer="json",
+    timezone="UTC",
+    enable_utc=True,
+
+    # Mode eager uniquement si broker = memory://
+    task_always_eager=is_eager_mode,
+    task_eager_propagates=is_eager_mode,
+)

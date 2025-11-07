@@ -1,0 +1,102 @@
+#!/bin/bash
+
+# Script de démarrage de la stack complète dataMortem
+# Usage: ./start-stack.sh
+
+set -e
+
+echo "=================================================="
+echo "🚀 DÉMARRAGE STACK dataMortem"
+echo "=================================================="
+echo ""
+
+# Couleurs
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# 1. Démarrer tous les services Docker (incluant API, Celery, Frontend)
+echo -e "${BLUE}[1/3]${NC} Démarrage des services Docker..."
+echo "   - PostgreSQL"
+echo "   - Redis"
+echo "   - OpenSearch"
+echo "   - OpenSearch Dashboards"
+echo "   - Backend API"
+echo "   - Celery Worker"
+echo "   - Frontend React"
+docker-compose up -d --build
+echo -e "${GREEN}✅ Services Docker démarrés${NC}"
+echo ""
+
+# 2. Attendre que les services soient prêts
+echo -e "${BLUE}[2/3]${NC} Attente des services..."
+echo -n "   PostgreSQL..."
+until docker exec datamortem-postgres pg_isready -U datamortem > /dev/null 2>&1; do
+    sleep 1
+done
+echo -e " ${GREEN}OK${NC}"
+
+echo -n "   Redis..."
+until docker exec datamortem-redis redis-cli ping > /dev/null 2>&1; do
+    sleep 1
+done
+echo -e " ${GREEN}OK${NC}"
+
+echo -n "   OpenSearch..."
+max_wait=60
+waited=0
+until curl -s http://localhost:9200 > /dev/null 2>&1 || [ $waited -ge $max_wait ]; do
+    sleep 2
+    waited=$((waited + 2))
+done
+if [ $waited -ge $max_wait ]; then
+    echo -e " ${YELLOW}TIMEOUT (continuer quand même)${NC}"
+else
+    echo -e " ${GREEN}OK${NC}"
+fi
+
+echo -n "   Backend API..."
+until curl -s http://localhost:8000/docs > /dev/null 2>&1; do
+    sleep 1
+done
+echo -e " ${GREEN}OK${NC}"
+
+echo -n "   Frontend..."
+until curl -s http://localhost:5174 > /dev/null 2>&1; do
+    sleep 1
+done
+echo -e " ${GREEN}OK${NC}"
+echo ""
+
+# 3. Initialiser la base de données (run migrations inside container)
+echo -e "${BLUE}[3/3]${NC} Initialisation de la base de données..."
+docker exec datamortem-api uv run python -c "from app.db import Base, engine; Base.metadata.create_all(bind=engine)" || echo -e "${YELLOW}⚠️  Erreur création tables${NC}"
+echo -e "${GREEN}✅ Base de données initialisée${NC}"
+echo ""
+
+# Résumé
+echo "=================================================="
+echo "✅ STACK DÉMARRÉE"
+echo "=================================================="
+echo ""
+echo "Services disponibles:"
+echo "  🌐 Frontend:            http://localhost:5174"
+echo "  🔌 API:                 http://localhost:8000"
+echo "  📖 API Docs:            http://localhost:8000/docs"
+echo "  🔍 OpenSearch:          http://localhost:9200"
+echo "  📊 OpenSearch Dashboards: http://localhost:5601"
+echo "  🗄️  PostgreSQL:          localhost:5432"
+echo "  📮 Redis:               localhost:6379"
+echo ""
+echo "Logs Docker:"
+echo "  📝 API:        docker logs -f datamortem-api"
+echo "  📝 Celery:     docker logs -f datamortem-celery"
+echo "  📝 Frontend:   docker logs -f datamortem-frontend"
+echo "  📝 OpenSearch: docker logs -f datamortem-opensearch"
+echo ""
+echo "Commandes utiles:"
+echo "  Voir tous les logs:     docker-compose logs -f"
+echo "  Arrêter la stack:       docker-compose down"
+echo "  Rebuild & restart:      docker-compose up -d --build"
+echo ""

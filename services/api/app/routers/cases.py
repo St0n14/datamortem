@@ -1,4 +1,10 @@
-from fastapi import APIRouter, Depends
+# app/routers/cases.py
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from typing import List, Optional
+from sqlalchemy.orm import Session
+from datetime import datetime
+
 from ..db import SessionLocal
 from ..models import Case
 
@@ -11,15 +17,41 @@ def get_db():
     finally:
         db.close()
 
-@router.get("/")
-def list_cases(db=Depends(get_db)):
+# ---------- Schemas ----------
+
+class CaseIn(BaseModel):
+    case_id: str
+    note: Optional[str] = None
+
+class CaseOut(BaseModel):
+    case_id: str
+    status: str
+    created_at_utc: datetime
+    note: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+# ---------- Routes ----------
+
+@router.get("/cases", response_model=List[CaseOut])
+def list_cases(db: Session = Depends(get_db)):
     rows = db.query(Case).all()
-    return [
-        {
-            "case_id": r.case_id,
-            "customer_name": r.customer_name,
-            "incident_start_utc": r.incident_start_utc.isoformat() + "Z",
-            "created_at_utc": r.created_at_utc.isoformat() + "Z",
-        }
-        for r in rows
-    ]
+    return rows
+
+@router.post("/cases", response_model=CaseOut, status_code=201)
+def create_case(payload: CaseIn, db: Session = Depends(get_db)):
+    # refuse doublon case_id
+    existing = db.query(Case).filter_by(case_id=payload.case_id).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="case_id already exists")
+
+    c = Case(
+        case_id=payload.case_id,
+        note=payload.note,
+        status="open",
+    )
+    db.add(c)
+    db.commit()
+    db.refresh(c)
+    return c

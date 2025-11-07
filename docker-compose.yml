@@ -1,0 +1,173 @@
+version: '3.8'
+
+services:
+  # PostgreSQL - Metadata database
+  postgres:
+    image: postgres:16-alpine
+    container_name: datamortem-postgres
+    environment:
+      POSTGRES_DB: datamortem
+      POSTGRES_USER: datamortem
+      POSTGRES_PASSWORD: datamortem_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U datamortem"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - datamortem
+
+  # Redis - Celery Broker
+  redis:
+    image: redis:7-alpine
+    container_name: datamortem-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - datamortem
+
+  # OpenSearch - Search and indexing
+  opensearch:
+    image: opensearchproject/opensearch:2.17.0
+    container_name: datamortem-opensearch
+    environment:
+      - discovery.type=single-node
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=Admin123!
+      - DISABLE_SECURITY_PLUGIN=true
+      - bootstrap.memory_lock=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    ports:
+      - "9200:9200"
+      - "9600:9600"
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - datamortem
+
+  # OpenSearch Dashboards - Visualization interface
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:2.17.0
+    container_name: datamortem-dashboards
+    environment:
+      - OPENSEARCH_HOSTS=http://opensearch:9200
+      - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
+    ports:
+      - "5601:5601"
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    networks:
+      - datamortem
+
+  # Backend API - FastAPI
+  api:
+    build:
+      context: ./services/api
+      dockerfile: Dockerfile
+    container_name: datamortem-api
+    environment:
+      - DM_ENV=dev
+      - DM_DB_URL=postgresql://datamortem:datamortem_dev_password@postgres:5432/datamortem
+      - DM_CELERY_BROKER=redis://redis:6379/0
+      - DM_CELERY_BACKEND=redis://redis:6379/1
+      - DM_OPENSEARCH_HOST=opensearch
+      - DM_OPENSEARCH_PORT=9200
+      - DM_OPENSEARCH_SCHEME=http
+      - DM_ALLOWED_ORIGINS=http://localhost:5174,http://127.0.0.1:5174,http://frontend:5174
+      - DM_LAKE_ROOT=/lake
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./services/api:/app
+      - lake-data:/lake
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+    networks:
+      - datamortem
+    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Celery Worker - Background tasks
+  celery-worker:
+    build:
+      context: ./services/api
+      dockerfile: Dockerfile
+    container_name: datamortem-celery
+    environment:
+      - DM_ENV=dev
+      - DM_DB_URL=postgresql://datamortem:datamortem_dev_password@postgres:5432/datamortem
+      - DM_CELERY_BROKER=redis://redis:6379/0
+      - DM_CELERY_BACKEND=redis://redis:6379/1
+      - DM_OPENSEARCH_HOST=opensearch
+      - DM_OPENSEARCH_PORT=9200
+      - DM_OPENSEARCH_SCHEME=http
+      - DM_LAKE_ROOT=/lake
+    volumes:
+      - ./services/api:/app
+      - lake-data:/lake
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+    networks:
+      - datamortem
+    command: uv run celery -A app.celery_app worker --loglevel=info
+
+  # Frontend - React/Vite
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: datamortem-frontend
+    ports:
+      - "5174:5174"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://api:8000
+    depends_on:
+      - api
+    networks:
+      - datamortem
+
+volumes:
+  postgres-data:
+  redis-data:
+  opensearch-data:
+  lake-data:
+
+networks:
+  datamortem:
+    driver: bridge

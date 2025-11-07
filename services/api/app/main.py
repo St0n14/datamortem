@@ -1,23 +1,41 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from .config import settings
+from .db import Base, engine
+from .routers import pipeline, events, case, evidence, artifacts, search, indexing
+from .opensearch.client import close_opensearch_client
 
-from .db import engine
-from .models import Base
-
-# créer les tables si pas encore créées
+# Assure que les tables existent (SQLite dev mode)
 Base.metadata.create_all(bind=engine)
 
-from .routers import cases, evidence, modules, runs  # <-- après que packages existent
-
 app = FastAPI(
-    title="DataMortem Ingest API",
-    version="0.0.1",
+    title="dataMortem API",
+    version="0.1.0",
+    description="Digital Forensics Investigation Platform"
 )
 
-app.include_router(cases.router,    prefix="/cases",    tags=["cases"])
-app.include_router(evidence.router, prefix="/evidence", tags=["evidence"])
-app.include_router(modules.router,  prefix="/modules",  tags=["modules"])
-app.include_router(runs.router,     prefix="/runs",     tags=["runs"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.allowed_origins_list(),
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# routes
+app.include_router(case.router, prefix="/api")
+app.include_router(evidence.router, prefix="/api")
+app.include_router(pipeline.router, prefix="/api")
+app.include_router(events.router, prefix="/api")
+app.include_router(artifacts.router, prefix="/api")
+app.include_router(search.router, prefix="/api")      # OpenSearch search
+app.include_router(indexing.router, prefix="/api")    # OpenSearch indexing
 
 @app.get("/health")
-def healthcheck():
-    return {"status": "ok"}
+def health():
+    return {"status": "ok", "env": settings.dm_env}
+
+@app.on_event("shutdown")
+def shutdown_event():
+    """Ferme proprement les connexions lors du shutdown."""
+    close_opensearch_client()

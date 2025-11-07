@@ -1,98 +1,203 @@
-from sqlalchemy.orm import declarative_base, Mapped, mapped_column, relationship
-from sqlalchemy import String, Integer, DateTime, ForeignKey, Boolean, Text
 from datetime import datetime
+from typing import Optional, List
 
-Base = declarative_base()
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    Text,
+    DateTime,
+    Boolean,
+    ForeignKey,
+)
+from sqlalchemy.orm import relationship, Mapped, mapped_column
 
+from .db import Base
+
+
+# -----------------
+# Case
+# -----------------
 class Case(Base):
     __tablename__ = "cases"
 
-    id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    case_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    customer_name: Mapped[str] = mapped_column(String(256))
-    incident_start_utc: Mapped[datetime] = mapped_column(DateTime(timezone=False))
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    case_id: Mapped[str] = mapped_column(String, unique=True, index=True)
+    status: Mapped[str] = mapped_column(String, default="open")
     created_at_utc: Mapped[datetime] = mapped_column(
-        DateTime(timezone=False), default=datetime.utcnow
+        DateTime, default=datetime.utcnow
     )
 
-    evidences = relationship("Evidence", back_populates="case")
+    # Remplace "description" par "note"
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+    # relations
+    evidences: Mapped[List["Evidence"]] = relationship(
+        "Evidence",
+        back_populates="case",
+        cascade="all, delete-orphan",
+    )
+
+    events: Mapped[List["Event"]] = relationship(
+        "Event",
+        back_populates="case",
+        cascade="all, delete-orphan",
+        primaryjoin="Case.case_id == Event.case_id",
+    )
+
+# -----------------
+# Evidence
+# -----------------
 class Evidence(Base):
     __tablename__ = "evidence"
-
-    id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    evidence_uid: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    case_id_fk: Mapped[int] = mapped_column(ForeignKey("cases.id"))
-    original_filename: Mapped[str] = mapped_column(String(512))
-    size_bytes: Mapped[int] = mapped_column(Integer)
-    sha1: Mapped[str] = mapped_column(String(64))
-    sha256: Mapped[str] = mapped_column(String(128))
-
-    local_path: Mapped[str] = mapped_column(String(1024))
-    # chemin absolu vers le fichier disque cible (ex: flare.vmdk sauvegardé chez toi)
-
-    status: Mapped[str] = mapped_column(String(32), default="registered")
-    created_at_utc: Mapped[datetime] = mapped_column(
-        DateTime(timezone=False), default=datetime.utcnow
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    # identifiant logique qu'on manipule partout (pipeline, UI)
+    evidence_uid: Mapped[str] = mapped_column(String, unique=True, index=True)
+    # lien vers la case (clé fonctionnelle case.case_id, pas l'id auto)
+    case_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("cases.case_id"),
+        index=True,
+    )
+    # où est stockée l'image disque / artefact local
+    local_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    added_at_utc: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow
+    )
+    # N:1 vers Case
+    case: Mapped["Case"] = relationship(
+        "Case",
+        back_populates="evidences",
+        primaryjoin="Evidence.case_id == Case.case_id",
+    )
+    # 1 evidence -> N TaskRun
+    task_runs: Mapped[List["TaskRun"]] = relationship(
+        "TaskRun",
+        back_populates="evidence",
+        cascade="all, delete-orphan",
     )
 
-    case = relationship("Case", back_populates="evidences")
-    datasets = relationship("Dataset", back_populates="evidence")
-    task_runs = relationship("TaskRun", back_populates="evidence")
 
-
-class Dataset(Base):
-    __tablename__ = "datasets"
-
-    id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    evidence_id_fk: Mapped[int] = mapped_column(ForeignKey("evidence.id"))
-
-    module_name: Mapped[str] = mapped_column(String(128))
-    storage_path: Mapped[str] = mapped_column(Text)
-
-    created_at_utc: Mapped[datetime] = mapped_column(
-        DateTime(timezone=False), default=datetime.utcnow
-    )
-
-    evidence = relationship("Evidence", back_populates="datasets")
-
-
+# -----------------
+# AnalysisModule
+# -----------------
 class AnalysisModule(Base):
     __tablename__ = "analysis_modules"
 
-    id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    name: Mapped[str] = mapped_column(String(128), unique=True, index=True)
-    description: Mapped[str] = mapped_column(String(512))
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+
+    # ex: "Parse MFT"
+    name: Mapped[str] = mapped_column(String)
+
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # ex: "parse_mft" -> clé dans TASK_REGISTRY
+    tool: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
-    created_at_utc: Mapped[datetime] = mapped_column(
-        DateTime(timezone=False), default=datetime.utcnow
-    )
-    updated_at_utc: Mapped[datetime] = mapped_column(
-        DateTime(timezone=False),
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+    # 1 module -> N TaskRun
+    runs: Mapped[List["TaskRun"]] = relationship(
+        "TaskRun",
+        back_populates="module",
+        cascade="all, delete-orphan",
     )
 
-    runs = relationship("TaskRun", back_populates="module")
 
-
+# -----------------
+# TaskRun
+# -----------------
 class TaskRun(Base):
-    __tablename__ = "task_runs"
+    __tablename__ = "task_run"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    task_name: Mapped[str] = mapped_column(String)
+    # lien vers l'evidence (FK explicite -> FIN de l'erreur actuelle)
+    evidence_uid: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("evidence.evidence_uid"),
+        index=True,
+    )
+    status: Mapped[str] = mapped_column(String, default="queued")
+    progress_message: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True
+    )
+    started_at_utc: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True
+    )
+    ended_at_utc: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True
+    )
+    output_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    celery_task_id: Mapped[Optional[str]] = mapped_column(
+        String,
+        nullable=True,
+        index=True,
+    )
+    module_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("analysis_modules.id"),
+        nullable=True,
+        index=True,
+    )
+    created_at_utc: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow
+    )
+    # N:1 vers AnalysisModule
+    module: Mapped[Optional["AnalysisModule"]] = relationship(
+        "AnalysisModule",
+        back_populates="runs",
+    )
+    # N:1 vers Evidence
+    evidence: Mapped["Evidence"] = relationship(
+        "Evidence",
+        back_populates="task_runs",
+    )
 
-    evidence_id_fk: Mapped[int] = mapped_column(ForeignKey("evidence.id"))
-    module_id_fk: Mapped[int] = mapped_column(ForeignKey("analysis_modules.id"))
 
-    status: Mapped[str] = mapped_column(String(32), default="pending")
-    # pending | running | success | error
+# -----------------
+# Event (timeline)
+# -----------------
+class Event(Base):
+    __tablename__ = "events"
 
-    started_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=False), nullable=True)
-    ended_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=False), nullable=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
 
-    error_message: Mapped[str] = mapped_column(Text, default="")
-    output_path: Mapped[str] = mapped_column(Text, default="")
+    ts: Mapped[str] = mapped_column(String)  # ISO8601 string
+    source: Mapped[str] = mapped_column(String)
+    message: Mapped[str] = mapped_column(Text)
 
-    module = relationship("AnalysisModule", back_populates="runs")
-    evidence = relationship("Evidence", back_populates="task_runs")
+    host: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    user: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    # tu stockes déjà les tags comme un string genre '["execution", "initial_access"]'
+    tags: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    case_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("cases.case_id"),
+        index=True,
+    )
+
+    evidence_uid: Mapped[Optional[str]] = mapped_column(
+        String,
+        nullable=True,
+        index=True,
+    )
+
+    raw: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    created_at_utc: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+    )
+
+    # N:1 vers Case
+    case: Mapped["Case"] = relationship(
+        "Case",
+        back_populates="events",
+        primaryjoin="Event.case_id == Case.case_id",
+    )

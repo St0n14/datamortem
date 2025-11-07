@@ -41,3 +41,17 @@ storage/evidence-master/**
 
 # ---- Test outputs ----
 test_output_*
+.env
+*.db
+**/dev.db
+/lake/
+
+frontend/node_modules/
+frontend/dist/
+
+services/api/.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
