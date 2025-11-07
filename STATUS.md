@@ -1,7 +1,15 @@
 # ✅ Stack dataMortem - Statut Opérationnel
 
-**Date:** 2025-11-06 08:53
+**Date:** 2025-11-06 10:15
 **Status:** ✅ TOUTE LA STACK EST OPÉRATIONNELLE
+
+---
+
+## 🆕 Changements récents
+
+- ✅ Ajout du CRUD complet pour les cases côté API (`GET/PATCH/DELETE /api/cases/{case_id}`)
+- ✅ Frontend : sélecteur de case global + édition/suppression directement depuis l’onglet Evidences
+- ✅ Timeline : reset automatique quand un case sans index est sélectionné (plus de vieux événements affichés)
 
 ---
 
@@ -85,9 +93,12 @@ GET /api/search/stats/{case_id}
 GET /api/search/health
 ```
 
-### Cases, Evidence, Pipeline (Existants)
+### Cases, Evidence, Pipeline (Existants + CRUD)
 - POST /api/cases - Créer un case
 - GET /api/cases - Lister les cases
+- GET /api/cases/{case_id} - Détail d’un case
+- PATCH /api/cases/{case_id} - Mettre à jour note ou status
+- DELETE /api/cases/{case_id} - Supprimer un case (cascade sur evidences/task runs)
 - POST /api/evidence - Ajouter une evidence
 - POST /api/pipeline/run - Lancer un parser
 
@@ -225,6 +236,7 @@ DM_OPENSEARCH_PORT=9200
 3. **Frontend**: Afficher les statistiques d'indexation
 4. **Backend**: Chaînage automatique parsing → indexation
 5. **Backend**: Système de règles de détection
+6. **Frontend**: Pagination/virtualisation timeline quand on activera la pagination OpenSearch
 
 ---
 
