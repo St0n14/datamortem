@@ -94,6 +94,7 @@ function AuthenticatedApp() {
     if (!currentCaseId) {
       setEvents([]);
       setTimelineBuckets([]);
+      setTimelineError(null);
       return;
     }
     loadEventsFromOpenSearch();
@@ -150,6 +151,7 @@ function AuthenticatedApp() {
   const loadTimelineFromOpenSearch = async () => {
     if (!currentCaseId) {
       setTimelineBuckets([]);
+      setTimelineError(null);
       return;
     }
     setTimelineLoading(true);

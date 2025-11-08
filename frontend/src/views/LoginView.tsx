@@ -1,176 +1,135 @@
-import React, { useState } from 'react';
-import { useAuth } from '../contexts/AuthContext';
+import React, { useState } from "react";
+import { ArrowRight, CheckCircle2, Lock } from "lucide-react";
+import { useAuth } from "../contexts/AuthContext";
+import { BrandMark } from "../components/BrandMark";
 
 export const LoginView: React.FC = () => {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setError("");
     setIsLoading(true);
 
     try {
       await login(username, password);
     } catch (err: any) {
-      setError(err.message || 'Login failed. Please check your credentials.');
+      setError(err.message || "Login failed. Please check your credentials.");
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div style={{
-      display: 'flex',
-      justifyContent: 'center',
-      alignItems: 'center',
-      minHeight: '100vh',
-      backgroundColor: '#0a0e1a',
-    }}>
-      <div style={{
-        backgroundColor: '#1a1f2e',
-        padding: '2rem',
-        borderRadius: '8px',
-        boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)',
-        width: '100%',
-        maxWidth: '400px',
-      }}>
-        <h1 style={{
-          color: '#fff',
-          textAlign: 'center',
-          marginBottom: '0.5rem',
-          fontSize: '1.5rem',
-        }}>
-          dataMortem
-        </h1>
-        <p style={{
-          color: '#888',
-          textAlign: 'center',
-          marginBottom: '2rem',
-          fontSize: '0.875rem',
-        }}>
-          Digital Forensics Investigation Platform
-        </p>
+    <div className="min-h-screen bg-slate-950 text-slate-50 lg:flex lg:flex-row">
+      <div className="hidden lg:flex lg:w-1/2 flex-col justify-between border-r border-slate-900 bg-gradient-to-b from-slate-950 via-slate-950 to-slate-900 px-12 py-12">
+        <BrandMark variant="light" subtitle="Cloud DFIR Platform" />
+        <div className="space-y-6">
+          <h2 className="text-3xl font-semibold text-white">Investiguez depuis n'importe quel cloud</h2>
+          <p className="text-sm text-slate-300 leading-relaxed">
+            dataMortem consolide vos artefacts, votre pipeline et votre moteur de recherche dans une seule console.
+            Déployez-le sur GCP, invitez vos analystes et gardez la maîtrise des accès.
+          </p>
+          <ul className="space-y-3 text-sm text-slate-100/80">
+            {[
+              "Comptes multi-équipes et rôles prêts pour GCP",
+              "Indexation OpenSearch accélérée pour vos cas",
+              "Audit trail complet et authentification JWT",
+            ].map((item) => (
+              <li key={item} className="flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/80">
+          <p className="font-semibold">Roadmap cloud</p>
+          <p className="text-white/70">
+            Provisionnez l'infra sur un projet GCP (Cloud Run ou GKE) et laissez vos utilisateurs créer leur compte directement depuis cette page.
+          </p>
+        </div>
+      </div>
 
-        <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{
-              display: 'block',
-              color: '#ccc',
-              marginBottom: '0.5rem',
-              fontSize: '0.875rem',
-            }}>
-              Username
-            </label>
-            <input
-              type="text"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder="Enter your username"
-              required
-              autoFocus
-              style={{
-                width: '100%',
-                padding: '0.75rem',
-                backgroundColor: '#0a0e1a',
-                border: '1px solid #333',
-                borderRadius: '4px',
-                color: '#fff',
-                fontSize: '1rem',
-                boxSizing: 'border-box',
-              }}
-            />
+      <div className="flex flex-1 items-center justify-center px-6 py-10">
+        <div className="w-full max-w-md rounded-3xl border border-slate-800 bg-slate-900/80 p-8 shadow-2xl shadow-slate-900/60">
+          <div className="mb-8 space-y-2 text-center">
+            <BrandMark subtitle="Secure Sign-In" className="justify-center" />
+            <p className="text-sm text-slate-400">Connectez-vous pour accéder à vos investigations.</p>
           </div>
 
-          <div style={{ marginBottom: '1.5rem' }}>
-            <label style={{
-              display: 'block',
-              color: '#ccc',
-              marginBottom: '0.5rem',
-              fontSize: '0.875rem',
-            }}>
-              Password
-            </label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter your password"
-              required
-              style={{
-                width: '100%',
-                padding: '0.75rem',
-                backgroundColor: '#0a0e1a',
-                border: '1px solid #333',
-                borderRadius: '4px',
-                color: '#fff',
-                fontSize: '1rem',
-                boxSizing: 'border-box',
-              }}
-            />
-          </div>
-
-          {error && (
-            <div style={{
-              backgroundColor: '#2a1515',
-              border: '1px solid #ff4444',
-              color: '#ff6666',
-              padding: '0.75rem',
-              borderRadius: '4px',
-              marginBottom: '1rem',
-              fontSize: '0.875rem',
-            }}>
-              {error}
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">Username</label>
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="ex: analyst@corp"
+                required
+                autoFocus
+                className="w-full rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:border-violet-500 focus:outline-none"
+              />
             </div>
-          )}
+
+            <div className="space-y-2">
+              <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">Password</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                required
+                className="w-full rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:border-violet-500 focus:outline-none"
+              />
+            </div>
+
+            {error && (
+              <div className="rounded-xl border border-rose-600/50 bg-rose-900/30 px-4 py-3 text-sm text-rose-200">
+                {error}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="flex w-full items-center justify-center gap-2 rounded-2xl border border-violet-500/60 bg-violet-600/20 px-4 py-3 text-sm font-semibold text-violet-50 transition hover:bg-violet-600/40 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isLoading ? (
+                "Connexion en cours..."
+              ) : (
+                <>
+                  Se connecter
+                  <ArrowRight className="h-4 w-4" />
+                </>
+              )}
+            </button>
+          </form>
+
+          <div className="mt-6 rounded-2xl border border-slate-800 bg-slate-950/60 p-4 text-sm text-slate-400">
+            <div className="mb-2 flex items-center gap-2 text-slate-200">
+              <Lock className="h-4 w-4 text-violet-300" />
+              Mode démo
+            </div>
+            <p>
+              <strong>Username:</strong> admin
+            </p>
+            <p>
+              <strong>Password:</strong> admin123
+            </p>
+          </div>
 
           <button
-            type="submit"
-            disabled={isLoading}
-            style={{
-              width: '100%',
-              padding: '0.75rem',
-              backgroundColor: isLoading ? '#555' : '#4a9eff',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '4px',
-              fontSize: '1rem',
-              fontWeight: 'bold',
-              cursor: isLoading ? 'not-allowed' : 'pointer',
-              transition: 'background-color 0.2s',
-            }}
-            onMouseEnter={(e) => {
-              if (!isLoading) {
-                e.currentTarget.style.backgroundColor = '#3a8eef';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!isLoading) {
-                e.currentTarget.style.backgroundColor = '#4a9eff';
-              }
-            }}
+            type="button"
+            disabled
+            className="mt-6 w-full rounded-2xl border border-slate-800 px-4 py-3 text-sm text-slate-500"
           >
-            {isLoading ? 'Logging in...' : 'Login'}
+            Créer un compte (bientôt disponible)
           </button>
-        </form>
-
-        <div style={{
-          marginTop: '1.5rem',
-          padding: '1rem',
-          backgroundColor: '#0a0e1a',
-          borderRadius: '4px',
-          border: '1px solid #333',
-        }}>
-          <p style={{ color: '#888', fontSize: '0.75rem', margin: '0 0 0.5rem 0' }}>
-            Default credentials:
-          </p>
-          <p style={{ color: '#ccc', fontSize: '0.875rem', margin: '0' }}>
-            <strong>Username:</strong> admin<br />
-            <strong>Password:</strong> admin123
-          </p>
         </div>
       </div>
     </div>
