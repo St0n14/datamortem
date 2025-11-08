@@ -10,6 +10,12 @@ import shutil
 from ..db import SessionLocal
 from ..models import Evidence, Case, User
 from ..auth.dependencies import get_current_active_user
+from ..auth.permissions import (
+    ensure_case_access,
+    ensure_case_access_by_id,
+    get_accessible_case_ids,
+    is_admin_user,
+)
 
 router = APIRouter()
 
@@ -63,11 +69,17 @@ def list_evidences(
     Retourne toutes les evidences, ou seulement celles liées à un case_id donné.
     (Requires authentication)
     """
-    q = db.query(Evidence)
+    query = db.query(Evidence)
     if case_id:
-        q = q.filter(Evidence.case_id == case_id)
-    rows = q.all()
-    return rows
+        ensure_case_access_by_id(case_id, current_user, db)
+        query = query.filter(Evidence.case_id == case_id)
+    elif not is_admin_user(current_user):
+        accessible_case_ids = get_accessible_case_ids(db, current_user)
+        if not accessible_case_ids:
+            return []
+        query = query.filter(Evidence.case_id.in_(accessible_case_ids))
+
+    return query.all()
 
 
 @router.post("/evidences", response_model=EvidenceOut, status_code=201)
@@ -92,6 +104,8 @@ def create_evidence(
             status_code=400,
             detail="case_id does not exist"
         )
+
+    ensure_case_access(parent_case, current_user)
 
     # 2. Vérifier que evidence_uid n'est pas déjà pris
     existing = (
@@ -166,6 +180,8 @@ async def upload_evidence(
     if not parent_case:
         raise HTTPException(status_code=400, detail="case_id does not exist")
 
+    ensure_case_access(parent_case, current_user)
+
     # 2. Vérifier que evidence_uid n'est pas déjà pris
     existing = db.query(Evidence).filter_by(evidence_uid=evidence_uid).first()
     if existing:
@@ -176,7 +192,7 @@ async def upload_evidence(
         raise HTTPException(status_code=400, detail="Only ZIP files are accepted")
 
     # 4. Créer le répertoire de destination
-    evidence_dir = f"/lake/{case_id}/evidences/{evidence_uid}"
+    evidence_dir = os.path.join("/lake", case_id, "evidences", evidence_uid)
     os.makedirs(evidence_dir, exist_ok=True)
 
     # 5. Sauvegarder le ZIP

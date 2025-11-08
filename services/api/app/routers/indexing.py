@@ -9,6 +9,11 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..models import TaskRun, Case, Evidence, User
 from ..auth.dependencies import get_current_active_user
+from ..auth.permissions import (
+    ensure_case_access,
+    ensure_case_access_by_id,
+    ensure_task_run_access,
+)
 from ..tasks.index_results import index_results_task, bulk_index_case_results
 import logging
 
@@ -82,6 +87,8 @@ def index_task_run(
             detail=f"TaskRun {req.task_run_id} not found"
         )
 
+    ensure_task_run_access(task_run, current_user)
+
     # Vérifie que le TaskRun a terminé avec succès
     if task_run.status != "success":
         raise HTTPException(
@@ -143,13 +150,7 @@ def index_case(
         req.force_reindex: Si True, réindexe tout (supprime et recrée l'index)
     """
     # Vérifie que le case existe
-    case = db.query(Case).filter_by(case_id=req.case_id).first()
-
-    if not case:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Case {req.case_id} not found"
-        )
+    case = ensure_case_access_by_id(req.case_id, current_user, db)
 
     # Compte les TaskRuns à indexer
     task_runs_query = (
@@ -220,6 +221,8 @@ def get_indexing_status(
             detail=f"TaskRun {task_run_id} not found"
         )
 
+    ensure_task_run_access(task_run, current_user)
+
     parser_name = task_run.module.tool if task_run.module else task_run.task_name
 
     return IndexStatusResponse(
@@ -245,13 +248,7 @@ def get_case_indexing_summary(
     - Nombre de documents dans l'index OpenSearch
     """
     # Vérifie que le case existe
-    case = db.query(Case).filter_by(case_id=case_id).first()
-
-    if not case:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Case {case_id} not found"
-        )
+    case = ensure_case_access_by_id(case_id, current_user, db)
 
     # Compte les TaskRuns par status
     total_task_runs = (

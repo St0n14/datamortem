@@ -7,7 +7,13 @@ from datetime import datetime
 
 from ..db import SessionLocal
 from ..models import AnalysisModule, TaskRun, Evidence, User
-from ..auth.dependencies import get_current_active_user
+from ..auth.dependencies import get_current_active_user, get_current_admin_user
+from ..auth.permissions import (
+    ensure_evidence_access_by_uid,
+    ensure_task_run_access,
+    get_accessible_case_ids,
+    is_admin_user,
+)
 from ..celery_app import celery_app
 
 # Tasks concrètes
@@ -113,12 +119,24 @@ def get_pipeline(
     """
 
     modules = db.execute(select(AnalysisModule)).scalars().all()
+    accessible_case_ids = None
+    if not is_admin_user(current_user):
+        accessible_case_ids = get_accessible_case_ids(db, current_user)
+        if not accessible_case_ids:
+            return []
+
+    if evidence_uid:
+        # Ensure the requester can access the evidence before using it
+        ensure_evidence_access_by_uid(evidence_uid, current_user, db)
     out: List[PipelineModuleOut] = []
 
     for m in modules:
         run_query = select(TaskRun).where(TaskRun.module_id == m.id)
         if evidence_uid:
             run_query = run_query.where(TaskRun.evidence_uid == evidence_uid)
+        elif accessible_case_ids is not None:
+            run_query = run_query.join(Evidence, TaskRun.evidence_uid == Evidence.evidence_uid)
+            run_query = run_query.filter(Evidence.case_id.in_(accessible_case_ids))
         run_query = run_query.order_by(desc(TaskRun.id)).limit(1)
 
         last_run = db.execute(run_query).scalar_one_or_none()
@@ -153,7 +171,14 @@ def list_task_runs(
     """
     run_q = select(TaskRun).order_by(desc(TaskRun.id))
     if evidence_uid:
+        ensure_evidence_access_by_uid(evidence_uid, current_user, db)
         run_q = run_q.where(TaskRun.evidence_uid == evidence_uid)
+    elif not is_admin_user(current_user):
+        accessible_case_ids = get_accessible_case_ids(db, current_user)
+        if not accessible_case_ids:
+            return []
+        run_q = run_q.join(Evidence, TaskRun.evidence_uid == Evidence.evidence_uid)
+        run_q = run_q.filter(Evidence.case_id.in_(accessible_case_ids))
 
     runs = db.execute(run_q).scalars().all()
     return [serialize_task_run(r) for r in runs]
@@ -177,6 +202,7 @@ def run_pipeline_module(
     ev = db.query(Evidence).filter_by(evidence_uid=evidence_uid).one_or_none()
     if not ev:
         raise HTTPException(status_code=404, detail="evidence not found")
+    ensure_evidence_access_by_uid(evidence_uid, current_user, db)
 
     # 2. Check module DB
     mod = db.query(AnalysisModule).filter_by(id=module_id).one_or_none()
@@ -249,6 +275,7 @@ def run_all_pipeline(
     ev = db.query(Evidence).filter_by(evidence_uid=evidence_uid).one_or_none()
     if not ev:
         raise HTTPException(status_code=404, detail="evidence not found")
+    ensure_evidence_access_by_uid(evidence_uid, current_user, db)
 
     mods = (
         db.query(AnalysisModule)
@@ -330,6 +357,8 @@ def kill_run(
     if not run:
         raise HTTPException(status_code=404, detail="run not found")
 
+    ensure_task_run_access(run, current_user)
+
     if run.status not in ("queued", "running"):
         raise HTTPException(status_code=400, detail="cannot kill this run")
 
@@ -352,7 +381,7 @@ def update_task_run_status(
     task_run_id: int,
     body: dict,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_admin_user)
 ):
     """
     Endpoint technique pour mettre à jour manuellement le statut d'un run

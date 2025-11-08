@@ -25,7 +25,7 @@ from ..opensearch.search import (
 )
 from ..config import settings
 from ..models import User
-from ..auth.dependencies import get_current_active_user
+from ..auth.dependencies import get_current_active_user, get_current_admin_user
 import logging
 
 logger = logging.getLogger(__name__)
@@ -267,7 +267,10 @@ def get_case_index_stats(
 
 
 @router.get("/health")
-def opensearch_health(client=Depends(get_opensearch_client_dep)):
+def opensearch_health(
+    client=Depends(get_opensearch_client_dep),
+    current_user: User = Depends(get_current_admin_user),
+):
     """
     Vérifie la santé de la connexion OpenSearch.
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { LoginView } from "./views/LoginView";
 import { Header } from "./components/Header";
@@ -18,6 +18,7 @@ import {
   Wrench,
   HardDrive,
   X,
+  RefreshCw,
 } from "lucide-react";
 
 import { Card, CardContent } from "./components/ui/Card";
@@ -43,6 +44,11 @@ type CaseSummary = {
   created_at_utc?: string;
 };
 
+type TimelineBucket = {
+  timestamp: string;
+  count: number;
+};
+
 // Main authenticated app component
 function AuthenticatedApp() {
   const [darkMode, setDarkMode] = useState(true);
@@ -61,6 +67,18 @@ function AuthenticatedApp() {
   const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
   const selectedEvent = events.find((e) => e.id === selectedEventId) ?? null;
   const [query, setQuery] = useState("*");
+  const [timelineBuckets, setTimelineBuckets] = useState<TimelineBucket[]>([]);
+  const [timelineInterval, setTimelineInterval] = useState("1h");
+  const [timelineLoading, setTimelineLoading] = useState(false);
+  const [timelineError, setTimelineError] = useState<string | null>(null);
+  const maxTimelineCount = useMemo(
+    () => (timelineBuckets.length ? Math.max(...timelineBuckets.map((b) => b.count)) : 0),
+    [timelineBuckets]
+  );
+  const timelineTotal = useMemo(
+    () => timelineBuckets.reduce((acc, bucket) => acc + bucket.count, 0),
+    [timelineBuckets]
+  );
 
   // Initialize dark mode class on mount
   useEffect(() => {
@@ -73,16 +91,32 @@ function AuthenticatedApp() {
   }, [darkMode]);
 
   useEffect(() => {
-    if (currentCaseId) {
-      loadEventsFromOpenSearch();
+    if (!currentCaseId) {
+      setEvents([]);
+      setTimelineBuckets([]);
+      return;
     }
+    loadEventsFromOpenSearch();
+    loadTimelineFromOpenSearch();
   }, [currentCaseId]);
+
+  useEffect(() => {
+    if (!currentCaseId) {
+      return;
+    }
+    loadTimelineFromOpenSearch();
+  }, [timelineInterval]);
 
   useEffect(() => {
     loadCases();
   }, [casesRefreshToken]);
 
   const loadEventsFromOpenSearch = async () => {
+    if (!currentCaseId) {
+      setEvents([]);
+      setSelectedEventId(null);
+      return;
+    }
     try {
       const data = await searchAPI.query({
         query: query,
@@ -113,6 +147,29 @@ function AuthenticatedApp() {
     }
   };
 
+  const loadTimelineFromOpenSearch = async () => {
+    if (!currentCaseId) {
+      setTimelineBuckets([]);
+      return;
+    }
+    setTimelineLoading(true);
+    setTimelineError(null);
+    try {
+      const data = await searchAPI.timeline({
+        case_id: currentCaseId,
+        interval: timelineInterval,
+        query,
+      });
+      setTimelineBuckets(data.buckets || data.timeline || []);
+    } catch (err) {
+      console.error("failed to load timeline", err);
+      setTimelineError("Impossible de charger la timeline (OpenSearch ?).");
+      setTimelineBuckets([]);
+    } finally {
+      setTimelineLoading(false);
+    }
+  };
+
   const loadCases = async () => {
     try {
       const data = await casesAPI.list();
@@ -136,6 +193,7 @@ function AuthenticatedApp() {
 
   const handleSearchSubmit = () => {
     loadEventsFromOpenSearch();
+    loadTimelineFromOpenSearch();
   };
 
   const handleCaseSelect = (caseId: string) => {
@@ -173,6 +231,19 @@ function AuthenticatedApp() {
       return map[tag] || map.default;
     }
   }
+
+  const formatTimelineLabel = (timestamp: string) => {
+    const date = new Date(timestamp);
+    if (Number.isNaN(date.getTime())) {
+      return timestamp;
+    }
+    return date.toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
 
   const bgApp = darkMode ? "bg-slate-950 text-slate-50" : "bg-gray-50 text-gray-900";
   const textWeak = darkMode ? "text-slate-500" : "text-gray-500";
@@ -381,6 +452,102 @@ function AuthenticatedApp() {
                   </Button>
                 </div>
               </div>
+
+              <Card className={`flex-1 min-w-0 ${darkMode ? "border-slate-700 bg-slate-900" : "border-gray-200 bg-white"}`}>
+                <CardContent className="p-4 space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className={`text-sm font-semibold ${darkMode ? "text-slate-100" : "text-gray-900"}`}>Timeline</p>
+                      <p className={`text-xs ${darkMode ? "text-slate-400" : "text-gray-500"}`}>
+                        {timelineTotal ? `${timelineTotal.toLocaleString()} events agrégés` : "En attente de données"}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={timelineInterval}
+                        onChange={(e) => setTimelineInterval(e.target.value)}
+                        className={`rounded-lg border px-2 py-1 text-sm ${
+                          darkMode ? "border-slate-700 bg-slate-900 text-slate-100" : "border-gray-300 bg-white text-gray-900"
+                        }`}
+                      >
+                        {["1m", "5m", "15m", "1h", "6h", "1d"].map((interval) => (
+                          <option key={interval} value={interval}>
+                            {interval}
+                          </option>
+                        ))}
+                      </select>
+                      <Button
+                        onClick={loadTimelineFromOpenSearch}
+                        disabled={timelineLoading}
+                        className={`h-9 whitespace-nowrap px-3 text-xs font-semibold ${
+                          darkMode
+                            ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800 disabled:border-slate-800 disabled:text-slate-500"
+                            : "border-gray-300 bg-white text-gray-800 hover:bg-gray-50 disabled:text-gray-400"
+                        }`}
+                      >
+                        <RefreshCw className="mr-1.5 h-4 w-4" />
+                        Refresh
+                      </Button>
+                    </div>
+                  </div>
+                  {timelineError && (
+                    <div
+                      className={`rounded-lg border px-3 py-2 text-xs ${
+                        darkMode ? "border-rose-700 text-rose-200" : "border-rose-200 text-rose-600"
+                      }`}
+                    >
+                      {timelineError}
+                    </div>
+                  )}
+                  <div className="flex flex-col gap-4">
+                    {timelineLoading ? (
+                      <p className={`text-sm ${darkMode ? "text-slate-400" : "text-gray-500"}`}>Chargement de la timeline…</p>
+                    ) : timelineBuckets.length === 0 ? (
+                      <p className={`text-sm ${darkMode ? "text-slate-400" : "text-gray-500"}`}>Aucune donnée pour cette requête.</p>
+                    ) : (
+                      <>
+                        <div className="overflow-x-auto pb-2">
+                          <div className="flex items-end gap-2 min-h-[200px]">
+                            {timelineBuckets.map((bucket) => {
+                              const heightPercent = maxTimelineCount
+                                ? Math.max((bucket.count / maxTimelineCount) * 100, 6)
+                                : 0;
+                              return (
+                                <div key={`timeline-bar-${bucket.timestamp}`} className="flex flex-col items-center gap-1 min-w-[38px]">
+                                  <div
+                                    className={`w-4 sm:w-5 rounded-t ${darkMode ? "bg-violet-500/80" : "bg-violet-600/80"}`}
+                                    style={{ height: `${heightPercent}%` }}
+                                    title={`${bucket.timestamp} — ${bucket.count}`}
+                                  />
+                                  <span className={`text-[10px] text-center leading-tight ${darkMode ? "text-slate-500" : "text-gray-500"}`}>
+                                    {formatTimelineLabel(bucket.timestamp)}
+                                  </span>
+                                  <span className={`text-[11px] font-semibold ${darkMode ? "text-slate-100" : "text-gray-900"}`}>
+                                    {bucket.count}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                        <div className="max-h-32 overflow-auto space-y-1 text-xs font-mono">
+                          {timelineBuckets.map((bucket) => (
+                            <div
+                              key={`timeline-row-${bucket.timestamp}`}
+                              className={`flex items-center justify-between rounded border px-2 py-1 ${
+                                darkMode ? "border-slate-800 bg-slate-900/60" : "border-gray-200 bg-gray-50"
+                              }`}
+                            >
+                              <span className="truncate pr-2">{bucket.timestamp}</span>
+                              <span>{bucket.count}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
 
               {/* Events table */}
               <Card className={`flex-1 min-w-0 flex flex-col ${darkMode ? "border-slate-700 bg-slate-900" : "border-gray-200 bg-white"}`}>

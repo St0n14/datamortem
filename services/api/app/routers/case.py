@@ -5,6 +5,7 @@ from typing import List
 from ..db import SessionLocal
 from ..models import Case, User
 from ..auth.dependencies import get_current_active_user
+from ..auth.permissions import is_admin_user
 from datetime import datetime
 
 router = APIRouter()
@@ -32,7 +33,10 @@ def list_cases(
     current_user: User = Depends(get_current_active_user)
 ):
     """List all cases (requires authentication)."""
-    rows = db.query(Case).all()
+    query = db.query(Case)
+    if not is_admin_user(current_user):
+        query = query.filter(Case.owner_id == current_user.id)
+    rows = query.all()
     return rows
 
 @router.post("/cases", response_model=CaseOut)

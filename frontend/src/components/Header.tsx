@@ -1,82 +1,48 @@
-import React from 'react';
-import { useAuth } from '../contexts/AuthContext';
+import { LogOut } from "lucide-react";
+import { useAuth } from "../contexts/AuthContext";
+import { BrandMark } from "./BrandMark";
+import { Button } from "./ui/Button";
 
 export const Header: React.FC = () => {
   const { user, logout } = useAuth();
 
-  return (
-    <div style={{
-      backgroundColor: '#1a1f2e',
-      borderBottom: '1px solid #333',
-      padding: '0.75rem 1.5rem',
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-    }}>
-      <div>
-        <h1 style={{
-          color: '#fff',
-          margin: 0,
-          fontSize: '1.25rem',
-          fontWeight: 'bold',
-        }}>
-          dataMortem
-        </h1>
-        <p style={{
-          color: '#888',
-          margin: 0,
-          fontSize: '0.75rem',
-        }}>
-          Digital Forensics Investigation Platform
-        </p>
-      </div>
+  const initials =
+    (user?.full_name || user?.username || "")
+      .split(" ")
+      .map((chunk) => chunk[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase();
 
-      {user && (
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '1rem',
-        }}>
-          <div style={{
-            textAlign: 'right',
-          }}>
-            <div style={{
-              color: '#fff',
-              fontSize: '0.875rem',
-              fontWeight: 'bold',
-            }}>
-              {user.full_name || user.username}
-            </div>
-            <div style={{
-              color: '#888',
-              fontSize: '0.75rem',
-            }}>
-              {user.role}
-            </div>
-          </div>
-          <button
-            onClick={logout}
-            style={{
-              padding: '0.5rem 1rem',
-              backgroundColor: '#ff4444',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '4px',
-              fontSize: '0.875rem',
-              cursor: 'pointer',
-              transition: 'background-color 0.2s',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = '#cc0000';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = '#ff4444';
-            }}
-          >
-            Logout
-          </button>
+  return (
+    <header className="sticky top-0 z-50 border-b border-slate-900/70 bg-slate-950/90 backdrop-blur">
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-6 py-3">
+        <BrandMark subtitle="Cloud DFIR Console" />
+        <div className="flex flex-1 items-center justify-end gap-4">
+          <span className="hidden sm:inline-flex items-center gap-2 rounded-full border border-emerald-500/30 px-3 py-1 text-[11px] font-semibold text-emerald-300">
+            <span className="h-2 w-2 rounded-full bg-emerald-400" />
+            GCP ready
+          </span>
+          {user && (
+            <>
+              <div className="hidden md:flex flex-col items-end leading-tight">
+                <span className="text-sm font-semibold text-slate-100">{user.full_name || user.username}</span>
+                <span className="text-[11px] uppercase tracking-wide text-slate-400">{user.role}</span>
+              </div>
+              <div className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-700 bg-slate-900 text-sm font-semibold text-slate-100">
+                {initials || "DM"}
+              </div>
+              <Button
+                onClick={logout}
+                className="inline-flex items-center gap-2 rounded-full border border-rose-500/60 bg-rose-600/20 px-4 py-2 text-sm font-semibold text-rose-50 hover:bg-rose-600/40"
+              >
+                <LogOut className="h-4 w-4" />
+                Logout
+              </Button>
+            </>
+          )}
         </div>
-      )}
-    </div>
+      </div>
+    </header>
   );
 };

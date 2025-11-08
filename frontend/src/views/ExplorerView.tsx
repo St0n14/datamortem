@@ -41,11 +41,6 @@ interface AggregationBucket {
   count: number;
 }
 
-interface TimelineBucket {
-  timestamp: string;
-  count: number;
-}
-
 const PAGE_SIZE_OPTIONS = [25, 50, 100];
 const FILTER_OPERATORS: { value: FilterOperator; label: string }[] = [
   { value: "equals", label: "=" },
@@ -135,9 +130,6 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
   const [aggBuckets, setAggBuckets] = useState<AggregationBucket[]>([]);
   const [aggLoading, setAggLoading] = useState(false);
   const [aggCollapsed, setAggCollapsed] = useState(false);
-  const [timelineInterval, setTimelineInterval] = useState("1h");
-  const [timelineBuckets, setTimelineBuckets] = useState<TimelineBucket[]>([]);
-  const [timelineLoading, setTimelineLoading] = useState(false);
   const [refreshToken, setRefreshToken] = useState(0);
   const [fieldSamples, setFieldSamples] = useState<FieldSample[]>([]);
   const [fieldSearch, setFieldSearch] = useState("");
@@ -173,10 +165,6 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
     return Object.keys(payload).length ? payload : undefined;
   }, [timeRange]);
   const timeRangeKey = useMemo(() => JSON.stringify(timeRangePayload ?? {}), [timeRangePayload]);
-  const maxTimelineCount = useMemo(
-    () => (timelineBuckets.length ? Math.max(...timelineBuckets.map((b) => b.count)) || 1 : 1),
-    [timelineBuckets]
-  );
   const aggregationFieldOptions = useMemo(() => {
     const merged = new Map<string, string>();
     COMMON_FIELDS.forEach((field) => merged.set(field.value, field.label));
@@ -195,18 +183,6 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
     return fieldSamples.filter((sample) => sample.field.toLowerCase().includes(needle)).slice(0, 50);
   }, [fieldSamples, fieldSearch]);
   const authHeaders = useMemo(() => (token ? { Authorization: `Bearer ${token}` } : {}), [token]);
-  const formatTimelineLabel = (timestamp: string) => {
-    const date = new Date(timestamp);
-    if (Number.isNaN(date.getTime())) {
-      return timestamp;
-    }
-    return date.toLocaleString(undefined, {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
 
   useEffect(() => {
     if (aggregationFieldOptions.length === 0) {
@@ -265,7 +241,6 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
       setResults([]);
       setTotal(0);
       setAggBuckets([]);
-      setTimelineBuckets([]);
       setFieldSamples([]);
       setSelectedEvent(null);
       return;
@@ -273,8 +248,8 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
     setPage(0);
     setSelectedEvent(null);
     setAggBuckets([]);
-    setTimelineBuckets([]);
     setFieldSamples([]);
+    setRefreshToken((t) => t + 1);
   }, [currentCaseId, token]);
 
   useEffect(() => {
@@ -404,47 +379,6 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
     runAgg();
     return () => controller.abort();
   }, [currentCaseId, submittedQuery, aggField, aggSize, filterPayload, timeRangeKey, authHeaders, token]);
-
-  useEffect(() => {
-    if (!currentCaseId || !token) {
-      setTimelineBuckets([]);
-      setTimelineLoading(false);
-      return;
-    }
-
-    const controller = new AbortController();
-    const runTimeline = async () => {
-      setTimelineLoading(true);
-      try {
-        const res = await fetch("/api/search/timeline", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...authHeaders },
-          signal: controller.signal,
-          body: JSON.stringify({
-            case_id: currentCaseId,
-            interval: timelineInterval,
-            query: submittedQuery,
-            field_filters: filterPayload,
-            time_range: timeRangePayload,
-          }),
-        });
-        if (!res.ok) {
-          throw new Error(await res.text());
-        }
-        const data = await res.json();
-        setTimelineBuckets(data.buckets || []);
-      } catch (err) {
-        if ((err as any).name === "AbortError") return;
-        console.error("timeline failed", err);
-        setTimelineBuckets([]);
-      } finally {
-        setTimelineLoading(false);
-      }
-    };
-
-    runTimeline();
-    return () => controller.abort();
-  }, [currentCaseId, submittedQuery, timelineInterval, filterPayload, timeRangeKey, authHeaders, token]);
 
   const pageInfo = useMemo(() => {
     if (!total) return "0 results";
@@ -825,7 +759,7 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(260px,320px)_1fr] gap-4 flex-1 min-h-0 w-full">
+      <div className="flex-1 min-h-0 w-full">
         <Card className={cardBg}>
           <CardContent className="p-4 space-y-3">
             <div className="flex items-center gap-3">
@@ -891,68 +825,6 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
                 )}
               </div>
             )}
-          </CardContent>
-        </Card>
-
-        <Card className={`${cardBg} h-full`}>
-          <CardContent className="p-4 space-y-3 h-full flex flex-col min-h-0">
-            <div className="flex items-center gap-3">
-              <span className={`text-sm font-semibold ${textStrong}`}>Timeline</span>
-              <select
-                value={timelineInterval}
-                onChange={(e) => setTimelineInterval(e.target.value)}
-                className={`rounded-lg border px-2 py-1 text-sm ${
-                  darkMode ? "border-slate-700 bg-slate-900 text-slate-50" : "border-gray-300 bg-white text-gray-900"
-                }`}
-              >
-                {["1m", "5m", "15m", "1h", "6h", "1d"].map((interval) => (
-                  <option key={interval} value={interval}>
-                    {interval}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex-1 min-h-0 flex flex-col gap-4">
-              {timelineLoading ? (
-                <p className={`text-sm ${textWeak}`}>Loading timeline…</p>
-              ) : timelineBuckets.length === 0 ? (
-                <p className={`text-sm ${textWeak}`}>No timeline data.</p>
-              ) : (
-                <>
-                  <div className="overflow-x-auto pb-2">
-                    <div className="flex items-end gap-2 min-h-[200px]">
-                      {timelineBuckets.map((bucket) => {
-                        const heightPercent = maxTimelineCount ? Math.max((bucket.count / maxTimelineCount) * 100, 4) : 0;
-                        return (
-                          <div key={`bar-${bucket.timestamp}`} className="flex flex-col items-center gap-1 min-w-[38px]">
-                            <div
-                              className={`w-4 sm:w-5 rounded-t ${darkMode ? "bg-violet-500/80" : "bg-violet-600/80"}`}
-                              style={{ height: `${heightPercent}%` }}
-                              title={`${bucket.timestamp} • ${bucket.count}`}
-                            />
-                            <span className={`text-[10px] text-center leading-tight ${textWeak}`}>{formatTimelineLabel(bucket.timestamp)}</span>
-                            <span className={`text-[11px] font-semibold ${textStrong}`}>{bucket.count}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <div className="max-h-36 overflow-auto space-y-1 text-xs font-mono">
-                    {timelineBuckets.map((bucket) => (
-                      <div
-                        key={`row-${bucket.timestamp}`}
-                        className={`flex items-center justify-between rounded border px-2 py-1 ${
-                          darkMode ? "border-slate-800 bg-slate-900/40" : "border-gray-200 bg-gray-50"
-                        }`}
-                      >
-                        <span className="truncate pr-2">{bucket.timestamp}</span>
-                        <span>{bucket.count}</span>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
           </CardContent>
         </Card>
       </div>

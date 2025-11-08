@@ -8,7 +8,14 @@ from datetime import datetime
 import json
 
 from ..db import SessionLocal
-from ..models import Event, Case
+from ..models import Event, Case, User
+from ..auth.dependencies import get_current_active_user
+from ..auth.permissions import (
+    ensure_case_access,
+    ensure_case_access_by_id,
+    get_accessible_case_ids,
+    is_admin_user,
+)
 
 router = APIRouter()
 
@@ -52,15 +59,25 @@ class EventOut(BaseModel):
 # ---------- Routes ----------
 
 @router.get("/events", response_model=List[EventOut])
-def list_events(case_id: Optional[str] = None, db: Session = Depends(get_db)):
+def list_events(
+    case_id: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
     """
     Récupère les events, optionnellement filtré par case_id.
     Re-transforme tags (str JSON en DB) -> list[str] pour le front.
     """
-    q = db.query(Event).order_by(Event.id.asc())
+    query = db.query(Event).order_by(Event.id.asc())
     if case_id:
-        q = q.filter(Event.case_id == case_id)
-    rows = q.all()
+        ensure_case_access_by_id(case_id, current_user, db)
+        query = query.filter(Event.case_id == case_id)
+    elif not is_admin_user(current_user):
+        accessible_case_ids = get_accessible_case_ids(db, current_user)
+        if not accessible_case_ids:
+            return []
+        query = query.filter(Event.case_id.in_(accessible_case_ids))
+    rows = query.all()
 
     out: List[EventOut] = []
     for e in rows:
@@ -101,7 +118,11 @@ def list_events(case_id: Optional[str] = None, db: Session = Depends(get_db)):
 
 
 @router.post("/events/ingest")
-def ingest_events(payload: List[EventIn], db: Session = Depends(get_db)):
+def ingest_events(
+    payload: List[EventIn],
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
     """
     Ingestion d'une liste d'events.
     - Vérifie que le case_id existe
@@ -116,11 +137,7 @@ def ingest_events(payload: List[EventIn], db: Session = Depends(get_db)):
         case_exists = db.execute(
             select(Case).where(Case.case_id == ev.case_id)
         ).scalar_one_or_none()
-        if not case_exists:
-            raise HTTPException(
-                status_code=400,
-                detail=f"case_id '{ev.case_id}' does not exist"
-            )
+        ensure_case_access(case_exists, current_user)
 
         tags_text = json.dumps(ev.tags) if ev.tags else None
 
