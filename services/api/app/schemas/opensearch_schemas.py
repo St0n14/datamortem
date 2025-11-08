@@ -3,7 +3,29 @@ Pydantic schemas for OpenSearch API requests and responses.
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, List, Any
+from typing import Optional, Dict, List, Any, Literal
+
+
+class FieldFilter(BaseModel):
+    """Advanced filter definition for explorer-like queries."""
+
+    field: str = Field(..., description="Field path (e.g., event.type)")
+    operator: Literal[
+        "equals",
+        "not_equals",
+        "contains",
+        "prefix",
+        "wildcard",
+        "exists",
+        "missing",
+    ] = Field(
+        default="equals",
+        description="Filter operator",
+    )
+    value: Optional[Any] = Field(
+        default=None,
+        description="Value (ignored for exists/missing)",
+    )
 
 
 class SearchRequest(BaseModel):
@@ -41,6 +63,10 @@ class SearchRequest(BaseModel):
     filters: Optional[Dict[str, Any]] = Field(
         default=None,
         description="Additional term filters {field: value}"
+    )
+    field_filters: List[FieldFilter] = Field(
+        default_factory=list,
+        description="Advanced filters with operators"
     )
     time_range: Optional[Dict[str, str]] = Field(
         default=None,
@@ -114,6 +140,18 @@ class AggregationRequest(BaseModel):
         default=None,
         description="Optional query to filter results"
     )
+    filters: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Simple filters {field: value}"
+    )
+    field_filters: List[FieldFilter] = Field(
+        default_factory=list,
+        description="Advanced filters with operators"
+    )
+    time_range: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="Time range {gte, lte}"
+    )
 
 
 class AggregationBucket(BaseModel):
@@ -165,6 +203,18 @@ class TimelineRequest(BaseModel):
     query: Optional[str] = Field(
         default=None,
         description="Optional query to filter results"
+    )
+    filters: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Simple filters {field: value}"
+    )
+    field_filters: List[FieldFilter] = Field(
+        default_factory=list,
+        description="Advanced filters with operators"
+    )
+    time_range: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="Time range {gte, lte}"
     )
 
 

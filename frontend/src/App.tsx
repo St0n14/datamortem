@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { PipelineView } from "./components/PipelineView";
 import { EvidencesView } from "./views/EvidencesView";
+import { ExplorerView } from "./views/ExplorerView";
 import {
   Skull,
   Sun,
@@ -41,7 +42,7 @@ type CaseSummary = {
 export default function App() {
   const [darkMode, setDarkMode] = useState(true);
   const [activeTab, setActiveTab] =
-    useState<"timeline" | "pipeline" | "rules" | "evidences">("timeline");
+    useState<"timeline" | "pipeline" | "rules" | "evidences" | "explorer">("timeline");
 
   const [currentCaseId, setCurrentCaseId] = useState<string>("test_pc_001");
   const [selectedEvidenceUid] = useState<string | null>("evidence_pc_001");
@@ -284,6 +285,7 @@ export default function App() {
             <div className="flex w-full flex-wrap items-center gap-2 text-[11px] font-medium">
               {[
                 { key: "timeline" as const, label: "Timeline", icon: <Clock className="h-3.5 w-3.5" /> },
+                { key: "explorer" as const, label: "Explorer", icon: <Search className="h-3.5 w-3.5" /> },
                 { key: "evidences" as const, label: "Evidences", icon: <HardDrive className="h-3.5 w-3.5" /> },
                 { key: "pipeline" as const, label: "Pipeline", icon: <WrenchIcon size={14} /> },
                 { key: "rules" as const, label: "Rules", icon: <ShieldCheck className="h-3.5 w-3.5" /> },
@@ -469,6 +471,13 @@ export default function App() {
               currentCaseId={currentCaseId}
               onCaseChange={handleCaseSelect}
               onCasesUpdated={refreshCases}
+            />
+          )}
+
+          {activeTab === "explorer" && (
+            <ExplorerView
+              darkMode={darkMode}
+              currentCaseId={currentCaseId}
             />
           )}
 

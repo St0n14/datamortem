@@ -5,7 +5,7 @@ Provides query builders and search utilities.
 """
 
 from opensearchpy import OpenSearch
-from typing import Optional, Dict, List, Any
+from typing import Optional, Dict, List, Any, Tuple
 import logging
 
 logger = logging.getLogger(__name__)
@@ -53,6 +53,56 @@ def build_term_filters(filters: Dict[str, Any]) -> List[dict]:
     ]
 
 
+def build_field_filter_clauses(
+    field_filters: List[Dict[str, Any]]
+) -> Tuple[List[dict], List[dict]]:
+    """
+    Construit des clauses must/must_not depuis des filtres avancés.
+
+    Args:
+        field_filters: List of dicts {field, operator, value}
+
+    Returns:
+        Tuple (must_clauses, must_not_clauses)
+    """
+    must: List[dict] = []
+    must_not: List[dict] = []
+
+    for f in field_filters:
+        field = f.get("field")
+        operator = f.get("operator", "equals")
+        value = f.get("value")
+
+        if not field:
+            continue
+
+        clause: Optional[dict] = None
+
+        if operator == "equals":
+            clause = {"term": {field: value}}
+            must.append(clause)
+        elif operator == "not_equals":
+            clause = {"term": {field: value}}
+            must_not.append(clause)
+        elif operator == "contains":
+            clause = {"match_phrase": {field: value}}
+            must.append(clause)
+        elif operator == "prefix":
+            clause = {"prefix": {field: value}}
+            must.append(clause)
+        elif operator == "wildcard":
+            clause = {"wildcard": {field: value}}
+            must.append(clause)
+        elif operator == "exists":
+            clause = {"exists": {"field": field}}
+            must.append(clause)
+        elif operator == "missing":
+            clause = {"exists": {"field": field}}
+            must_not.append(clause)
+
+    return must, must_not
+
+
 def build_range_query(
     field: str,
     gte: Optional[Any] = None,
@@ -86,11 +136,49 @@ def build_range_query(
     return {"range": {field: range_params}}
 
 
+def build_bool_query(
+    query: Optional[str],
+    filters: Optional[Dict[str, Any]] = None,
+    field_filters: Optional[List[Dict[str, Any]]] = None,
+    time_range: Optional[Dict[str, Any]] = None,
+) -> dict:
+    """
+    Construit une query bool combinant query string, filtres et range.
+    """
+    must: List[dict] = []
+    must_not: List[dict] = []
+
+    if query and query.strip() and query.strip() != "*":
+        must.append(build_query_string_query(query))
+    else:
+        must.append({"match_all": {}})
+
+    if filters:
+        must.extend(build_term_filters(filters))
+
+    if field_filters:
+        extra_must, extra_must_not = build_field_filter_clauses(field_filters)
+        must.extend(extra_must)
+        must_not.extend(extra_must_not)
+
+    if time_range:
+        must.append(build_range_query("@timestamp", **time_range))
+
+    bool_query: Dict[str, Any] = {}
+    if must:
+        bool_query["must"] = must
+    if must_not:
+        bool_query["must_not"] = must_not
+
+    return {"bool": bool_query}
+
+
 def search_events(
     client: OpenSearch,
     index_name: str,
     query: str,
     filters: Optional[Dict[str, Any]] = None,
+    field_filters: Optional[List[Dict[str, Any]]] = None,
     time_range: Optional[Dict[str, str]] = None,
     from_: int = 0,
     size: int = 50,
@@ -114,30 +202,15 @@ def search_events(
     Returns:
         Search response dict
     """
-    # Construction de la query
-    must_clauses = []
-
-    # Query string principale
-    if query and query.strip() and query.strip() != "*":
-        must_clauses.append(build_query_string_query(query))
-    else:
-        # Si pas de query ou query="*", match_all
-        must_clauses.append({"match_all": {}})
-
-    # Filtres additionnels
-    if filters:
-        must_clauses.extend(build_term_filters(filters))
-
-    # Range de temps
-    if time_range:
-        must_clauses.append(build_range_query("@timestamp", **time_range))
+    bool_query = build_bool_query(
+        query=query,
+        filters=filters,
+        field_filters=field_filters or [],
+        time_range=time_range,
+    )
 
     query_body = {
-        "query": {
-            "bool": {
-                "must": must_clauses
-            }
-        },
+        "query": bool_query,
         "from": from_,
         "size": size,
         "sort": [{sort_by: {"order": sort_order}}]

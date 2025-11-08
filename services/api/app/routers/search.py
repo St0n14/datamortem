@@ -17,7 +17,12 @@ from ..schemas.opensearch_schemas import (
 )
 from ..opensearch.client import get_opensearch_client
 from ..opensearch.index_manager import get_index_name, get_document_count, get_index_stats
-from ..opensearch.search import search_events, aggregate_field, timeline_aggregation
+from ..opensearch.search import (
+    search_events,
+    aggregate_field,
+    timeline_aggregation,
+    build_bool_query,
+)
 from ..config import settings
 import logging
 
@@ -66,6 +71,7 @@ def search_case_events(
             index_name=index_name,
             query=req.query,
             filters=req.filters,
+            field_filters=[f.model_dump(exclude_none=True) for f in req.field_filters],
             time_range=req.time_range,
             from_=req.from_,
             size=req.size,
@@ -114,12 +120,12 @@ def aggregate_case_field(
         )
 
     try:
-        # Construit une query si fournie
-        query = None
-        if req.query:
-            from ..opensearch.search import build_query_string_query
-            query = {"bool": {"must": [build_query_string_query(req.query)]}}
-
+        query = build_bool_query(
+            query=req.query,
+            filters=req.filters,
+            field_filters=[f.model_dump(exclude_none=True) for f in req.field_filters],
+            time_range=req.time_range,
+        )
         agg_result = aggregate_field(
             client=client,
             index_name=index_name,
@@ -174,12 +180,12 @@ def get_case_timeline(
         )
 
     try:
-        # Construit une query si fournie
-        query = None
-        if req.query:
-            from ..opensearch.search import build_query_string_query
-            query = {"bool": {"must": [build_query_string_query(req.query)]}}
-
+        query = build_bool_query(
+            query=req.query,
+            filters=req.filters,
+            field_filters=[f.model_dump(exclude_none=True) for f in req.field_filters],
+            time_range=req.time_range,
+        )
         timeline_result = timeline_aggregation(
             client=client,
             index_name=index_name,
