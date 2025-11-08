@@ -14,18 +14,41 @@ import type {
 
 const API_BASE_URL = 'http://localhost:8000/api';
 
-// Helper function for API calls
+/**
+ * Get the authentication token from localStorage
+ */
+const getToken = (): string | null => {
+  return localStorage.getItem('auth_token');
+};
+
+// Helper function for API calls with authentication support
 async function fetchAPI<T>(
   endpoint: string,
   options?: RequestInit
 ): Promise<T> {
+  const token = getToken();
+
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+    ...options?.headers,
+  };
+
+  // Add authorization header if token exists
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
     ...options,
+    headers,
   });
+
+  // If unauthorized, clear token and reload (will redirect to login)
+  if (response.status === 401 || response.status === 403) {
+    localStorage.removeItem('auth_token');
+    window.location.reload();
+    throw new Error('Authentication required');
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
@@ -44,6 +67,17 @@ export const casesAPI = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+
+  update: (caseId: string, data: { note?: string; status?: string }) =>
+    fetchAPI<Case>(`/cases/${caseId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  delete: (caseId: string) =>
+    fetchAPI<void>(`/cases/${caseId}`, {
+      method: 'DELETE',
+    }),
 };
 
 // Evidence API
@@ -58,6 +92,38 @@ export const evidenceAPI = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+
+  upload: async (file: File, evidenceUid: string, caseId: string) => {
+    const token = getToken();
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('evidence_uid', evidenceUid);
+    formData.append('case_id', caseId);
+
+    const headers: HeadersInit = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/evidences/upload`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+
+    if (response.status === 401 || response.status === 403) {
+      localStorage.removeItem('auth_token');
+      window.location.reload();
+      throw new Error('Authentication required');
+    }
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+
+    return response.json();
+  },
 };
 
 // Pipeline API

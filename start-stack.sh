@@ -69,9 +69,9 @@ done
 echo -e " ${GREEN}OK${NC}"
 echo ""
 
-# 3. Initialiser la base de données (run migrations inside container)
+# 3. Initialiser la base de données (run migrations and create admin)
 echo -e "${BLUE}[3/3]${NC} Initialisation de la base de données..."
-docker exec datamortem-api uv run python -c "from app.db import Base, engine; Base.metadata.create_all(bind=engine)" || echo -e "${YELLOW}⚠️  Erreur création tables${NC}"
+docker exec datamortem-api sh init-db.sh
 echo -e "${GREEN}✅ Base de données initialisée${NC}"
 echo ""
 

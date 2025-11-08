@@ -3,7 +3,8 @@ import { Card, CardContent } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { Input } from "../components/ui/Input";
 import { Badge } from "../components/ui/Badge";
-import { Search, ChevronLeft, ChevronRight, RefreshCw, Filter, Plus, Trash2 } from "lucide-react";
+import { Search, ChevronLeft, ChevronRight, RefreshCw, Filter, Plus, Trash2, X } from "lucide-react";
+import { useAuth } from "../contexts/AuthContext";
 
 interface ExplorerViewProps {
   darkMode: boolean;
@@ -71,7 +72,54 @@ const DEFAULT_FILTER: FilterRow = {
   value: "",
 };
 
+type FieldSample = {
+  field: string;
+  value: string;
+};
+
+const isScalarValue = (value: unknown): value is string | number | boolean =>
+  ["string", "number", "boolean"].includes(typeof value);
+
+const collectFieldSamplesFromDoc = (
+  doc: Record<string, any>,
+  collector: Map<string, string>,
+  prefix = ""
+) => {
+  Object.entries(doc).forEach(([key, value]) => {
+    const path = prefix ? `${prefix}.${key}` : key;
+
+    if (value === null || value === undefined) {
+      return;
+    }
+
+    if (isScalarValue(value)) {
+      if (!collector.has(path)) {
+        collector.set(path, String(value));
+      }
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        if (isScalarValue(entry) && !collector.has(path)) {
+          collector.set(path, String(entry));
+          break;
+        }
+        if (entry && typeof entry === "object") {
+          collectFieldSamplesFromDoc(entry as Record<string, any>, collector, path);
+        }
+      }
+      return;
+    }
+
+    if (typeof value === "object") {
+      collectFieldSamplesFromDoc(value as Record<string, any>, collector, path);
+    }
+  });
+};
+
 export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
+  const { token } = useAuth();
   const [queryInput, setQueryInput] = useState("*");
   const [submittedQuery, setSubmittedQuery] = useState("*");
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -86,10 +134,15 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
   const [aggSize, setAggSize] = useState(10);
   const [aggBuckets, setAggBuckets] = useState<AggregationBucket[]>([]);
   const [aggLoading, setAggLoading] = useState(false);
+  const [aggCollapsed, setAggCollapsed] = useState(false);
   const [timelineInterval, setTimelineInterval] = useState("1h");
   const [timelineBuckets, setTimelineBuckets] = useState<TimelineBucket[]>([]);
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [refreshToken, setRefreshToken] = useState(0);
+  const [fieldSamples, setFieldSamples] = useState<FieldSample[]>([]);
+  const [fieldSearch, setFieldSearch] = useState("");
+  const [fieldExplorerOpen, setFieldExplorerOpen] = useState(true);
+  const [selectedEvent, setSelectedEvent] = useState<SearchResult | null>(null);
 
   const textWeak = darkMode ? "text-slate-400" : "text-gray-500";
   const textStrong = darkMode ? "text-slate-100" : "text-gray-900";
@@ -124,6 +177,46 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
     () => (timelineBuckets.length ? Math.max(...timelineBuckets.map((b) => b.count)) || 1 : 1),
     [timelineBuckets]
   );
+  const aggregationFieldOptions = useMemo(() => {
+    const merged = new Map<string, string>();
+    COMMON_FIELDS.forEach((field) => merged.set(field.value, field.label));
+    fieldSamples.forEach((sample) => {
+      if (!merged.has(sample.field)) {
+        merged.set(sample.field, sample.field);
+      }
+    });
+    return Array.from(merged.entries()).map(([value, label]) => ({ value, label }));
+  }, [fieldSamples]);
+  const filteredFieldSamples = useMemo(() => {
+    if (!fieldSearch.trim()) {
+      return fieldSamples.slice(0, 50);
+    }
+    const needle = fieldSearch.toLowerCase();
+    return fieldSamples.filter((sample) => sample.field.toLowerCase().includes(needle)).slice(0, 50);
+  }, [fieldSamples, fieldSearch]);
+  const authHeaders = useMemo(() => (token ? { Authorization: `Bearer ${token}` } : {}), [token]);
+  const formatTimelineLabel = (timestamp: string) => {
+    const date = new Date(timestamp);
+    if (Number.isNaN(date.getTime())) {
+      return timestamp;
+    }
+    return date.toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  useEffect(() => {
+    if (aggregationFieldOptions.length === 0) {
+      return;
+    }
+    const exists = aggregationFieldOptions.some((option) => option.value === aggField);
+    if (!exists) {
+      setAggField(aggregationFieldOptions[0].value);
+    }
+  }, [aggregationFieldOptions, aggField]);
 
   const triggerSearch = () => {
     if (!currentCaseId) {
@@ -155,15 +248,49 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
     setFilters((prev) => prev.filter((row) => row.id !== id));
   };
 
-  useEffect(() => {
-    setPage(0);
-    setRefreshToken((t) => t + 1);
-  }, [currentCaseId, pageSize, filterPayload, timeRangeKey]);
+  const handleQuickFilterAdd = (field: string, value: string) => {
+    setFilters((prev) => [
+      ...prev,
+      {
+        id: `filter-${Date.now()}`,
+        field,
+        operator: "equals",
+        value,
+      },
+    ]);
+  };
 
   useEffect(() => {
-    if (!currentCaseId) {
+    if (!currentCaseId || !token) {
       setResults([]);
       setTotal(0);
+      setAggBuckets([]);
+      setTimelineBuckets([]);
+      setFieldSamples([]);
+      setSelectedEvent(null);
+      return;
+    }
+    setPage(0);
+    setSelectedEvent(null);
+    setAggBuckets([]);
+    setTimelineBuckets([]);
+    setFieldSamples([]);
+  }, [currentCaseId, token]);
+
+  useEffect(() => {
+    if (!currentCaseId || !token) {
+      return;
+    }
+    setPage(0);
+    setRefreshToken((t) => t + 1);
+  }, [pageSize, filterPayload, timeRangeKey, currentCaseId, token]);
+
+  useEffect(() => {
+    if (!currentCaseId || !token) {
+      setResults([]);
+      setTotal(0);
+      setFieldSamples([]);
+      setLoading(false);
       return;
     }
 
@@ -174,7 +301,7 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
       try {
         const res = await fetch("/api/search/query", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...authHeaders },
           signal: controller.signal,
           body: JSON.stringify({
             query: submittedQuery,
@@ -208,6 +335,15 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
           score: doc._score,
         }));
 
+        const sampleCollector = new Map<string, string>();
+        mapped.forEach((hit) => collectFieldSamplesFromDoc(hit.doc, sampleCollector));
+        setFieldSamples(
+          Array.from(sampleCollector.entries()).map(([field, value]) => ({
+            field,
+            value,
+          }))
+        );
+
         setResults(mapped);
         setTotal(data.total || 0);
       } catch (err: any) {
@@ -216,6 +352,7 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
         setError("Search failed. Check case index or query.");
         setResults([]);
         setTotal(0);
+        setFieldSamples([]);
       } finally {
         setLoading(false);
       }
@@ -224,11 +361,12 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
     runSearch();
 
     return () => controller.abort();
-  }, [currentCaseId, submittedQuery, page, pageSize, refreshToken, filterPayload, timeRangeKey]);
+  }, [currentCaseId, submittedQuery, page, pageSize, refreshToken, filterPayload, timeRangeKey, authHeaders, token]);
 
   useEffect(() => {
-    if (!currentCaseId) {
+    if (!currentCaseId || !token) {
       setAggBuckets([]);
+      setAggLoading(false);
       return;
     }
 
@@ -238,7 +376,7 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
       try {
         const res = await fetch("/api/search/aggregate", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...authHeaders },
           signal: controller.signal,
           body: JSON.stringify({
             case_id: currentCaseId,
@@ -265,11 +403,12 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
 
     runAgg();
     return () => controller.abort();
-  }, [currentCaseId, submittedQuery, aggField, aggSize, filterPayload, timeRangeKey]);
+  }, [currentCaseId, submittedQuery, aggField, aggSize, filterPayload, timeRangeKey, authHeaders, token]);
 
   useEffect(() => {
-    if (!currentCaseId) {
+    if (!currentCaseId || !token) {
       setTimelineBuckets([]);
+      setTimelineLoading(false);
       return;
     }
 
@@ -279,7 +418,7 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
       try {
         const res = await fetch("/api/search/timeline", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...authHeaders },
           signal: controller.signal,
           body: JSON.stringify({
             case_id: currentCaseId,
@@ -305,7 +444,7 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
 
     runTimeline();
     return () => controller.abort();
-  }, [currentCaseId, submittedQuery, timelineInterval, filterPayload, timeRangeKey]);
+  }, [currentCaseId, submittedQuery, timelineInterval, filterPayload, timeRangeKey, authHeaders, token]);
 
   const pageInfo = useMemo(() => {
     if (!total) return "0 results";
@@ -315,21 +454,162 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
   }, [from, pageSize, total]);
 
   const handleBucketClick = (bucket: AggregationBucket) => {
-    setFilters((prev) => [
-      ...prev,
-      {
-        id: `filter-${Date.now()}`,
-        field: aggField,
-        operator: "equals",
-        value: bucket.key,
-      },
-    ]);
+    handleQuickFilterAdd(aggField, bucket.key);
+  };
+
+  const renderEventDetail = () => {
+    if (!selectedEvent) return null;
+
+    const formatValue = (value: any): string => {
+      if (value === null || value === undefined) return "null";
+      if (typeof value === "object") return JSON.stringify(value, null, 2);
+      return String(value);
+    };
+
+    const flattenObject = (obj: Record<string, any>, prefix = ""): Array<{ key: string; value: any }> => {
+      const result: Array<{ key: string; value: any }> = [];
+      Object.entries(obj).forEach(([key, value]) => {
+        const path = prefix ? `${prefix}.${key}` : key;
+        if (value && typeof value === "object" && !Array.isArray(value)) {
+          result.push(...flattenObject(value, path));
+        } else {
+          result.push({ key: path, value });
+        }
+      });
+      return result;
+    };
+
+    const fields = flattenObject(selectedEvent.doc);
+
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setSelectedEvent(null)}>
+        <div
+          className={`max-w-4xl w-full max-h-[80vh] rounded-lg border shadow-2xl ${cardBg} flex flex-col`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className={`flex items-center justify-between border-b px-6 py-4 ${darkMode ? "border-slate-700" : "border-gray-200"}`}>
+            <div>
+              <h3 className={`text-lg font-semibold ${textStrong}`}>Event Details</h3>
+              <p className={`text-sm ${textWeak}`}>{selectedEvent.timestamp || "No timestamp"}</p>
+            </div>
+            <button
+              onClick={() => setSelectedEvent(null)}
+              className={`rounded-lg p-2 transition hover:bg-slate-800 ${textWeak}`}
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-auto p-6">
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <span className={`text-xs font-semibold ${textWeak}`}>Parser</span>
+                  <p className={`text-sm ${textStrong}`}>{selectedEvent.parser || "-"}</p>
+                </div>
+                <div>
+                  <span className={`text-xs font-semibold ${textWeak}`}>Score</span>
+                  <p className={`text-sm ${textStrong}`}>{selectedEvent.score ?? "-"}</p>
+                </div>
+              </div>
+              <div>
+                <span className={`text-xs font-semibold ${textWeak}`}>Message</span>
+                <p className={`text-sm ${textStrong} break-words`}>{selectedEvent.message}</p>
+              </div>
+              <div>
+                <h4 className={`text-sm font-semibold mb-2 ${textStrong}`}>All Fields</h4>
+                <div className="space-y-2">
+                  {fields.map(({ key, value }) => (
+                    <div
+                      key={key}
+                      className={`rounded-lg border p-3 ${darkMode ? "border-slate-800 bg-slate-900/50" : "border-gray-200 bg-gray-50"}`}
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <span className={`text-xs font-mono font-semibold ${textWeak}`}>{key}</span>
+                          <pre className={`text-xs font-mono mt-1 whitespace-pre-wrap break-all ${textStrong}`}>
+                            {formatValue(value)}
+                          </pre>
+                        </div>
+                        <Button
+                          onClick={() => {
+                            handleQuickFilterAdd(key, String(value));
+                            setSelectedEvent(null);
+                          }}
+                          className={`flex-shrink-0 ${
+                            darkMode ? "border-slate-700 bg-slate-800 text-slate-200" : "border-gray-300 bg-white text-gray-800"
+                          }`}
+                        >
+                          Filter
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   return (
-    <div className="flex flex-col gap-4 h-full">
-      <Card className={cardBg}>
-        <CardContent className="p-4 space-y-4">
+    <div className="flex h-full gap-4 overflow-hidden">
+      <div className="w-72 flex-shrink-0 space-y-4 overflow-auto">
+        <Card className={cardBg}>
+          <CardContent className="p-4 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setFieldExplorerOpen((open) => !open)}
+                  className={`text-sm font-semibold ${textStrong}`}
+                >
+                  Field explorer
+                </button>
+                <Badge className="text-[10px]">{fieldSamples.length}</Badge>
+              </div>
+              {fieldExplorerOpen && (
+                <Input
+                  value={fieldSearch}
+                  onChange={(e) => setFieldSearch(e.target.value)}
+                  placeholder="Search fields"
+                  className={`text-xs ${darkMode ? "border-slate-700 bg-slate-900 text-slate-50" : ""}`}
+                />
+              )}
+            </div>
+            {fieldExplorerOpen ? (
+              filteredFieldSamples.length === 0 ? (
+                <p className={`text-sm ${textWeak}`}>No fields detected.</p>
+              ) : (
+                <div className="max-h-[calc(100vh-220px)] overflow-auto divide-y divide-slate-800/40 text-sm">
+                  {filteredFieldSamples.map((sample) => (
+                    <div key={sample.field} className="flex items-center gap-2 py-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-semibold truncate">{sample.field}</div>
+                        <div className={`text-xs truncate ${textWeak}`}>{sample.value}</div>
+                      </div>
+                      <Button
+                        onClick={() => handleQuickFilterAdd(sample.field, sample.value)}
+                        className={`transition active:scale-95 ${
+                          darkMode ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800" : "border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
+                        }`}
+                      >
+                        Filter
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )
+            ) : (
+              <p className={`text-xs italic ${textWeak}`}>Collapsed</p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="flex flex-1 flex-col gap-4 overflow-hidden min-h-0">
+        <Card className={cardBg}>
+          <CardContent className="p-4 space-y-4">
           <div className="flex flex-col gap-2">
             <label className={`text-sm font-semibold ${textStrong}`}>Search query</label>
             <div className="flex flex-col gap-2 md:flex-row">
@@ -342,11 +622,11 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
                 />
                 <Button
                   onClick={triggerSearch}
-                  className={
+                  className={`transition active:scale-95 ${
                     darkMode
-                      ? "border-violet-600/30 bg-violet-950/40 text-violet-200"
-                      : "border-violet-300 bg-violet-50 text-violet-700"
-                  }
+                      ? "border-violet-600/30 bg-violet-950/40 text-violet-200 hover:bg-violet-900/50"
+                      : "border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100"
+                  }`}
                 >
                   <Search className="h-4 w-4 mr-2" />
                   Search
@@ -382,9 +662,9 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
                 />
                 <Button
                   onClick={() => setRefreshToken((t) => t + 1)}
-                  className={
-                    darkMode ? "border-slate-700 bg-slate-900 text-slate-200" : "border-gray-300 bg-white text-gray-800"
-                  }
+                  className={`transition active:scale-95 ${
+                    darkMode ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800" : "border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
+                  }`}
                 >
                   <RefreshCw className="h-4 w-4" />
                 </Button>
@@ -398,9 +678,9 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
               <span className={`text-sm font-semibold ${textStrong}`}>Filters</span>
               <Button
                 onClick={addFilterRow}
-                className={
-                  darkMode ? "border-slate-700 bg-slate-900 text-slate-200" : "border-gray-300 bg-white text-gray-800"
-                }
+                className={`transition active:scale-95 ${
+                  darkMode ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800" : "border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
+                }`}
               >
                 <Plus className="h-4 w-4" />
               </Button>
@@ -448,9 +728,9 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
                   )}
                   <Button
                     onClick={() => removeFilterRow(row.id)}
-                    className={
-                      darkMode ? "border-rose-600/30 bg-rose-900/20 text-rose-200" : "border-rose-300 bg-rose-50 text-rose-700"
-                    }
+                    className={`transition active:scale-95 ${
+                      darkMode ? "border-rose-600/30 bg-rose-900/20 text-rose-200 hover:bg-rose-900/40" : "border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                    }`}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
@@ -471,7 +751,7 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
         </CardContent>
       </Card>
 
-      <Card className={`flex-1 ${cardBg}`}>
+      <Card className={`flex-1 ${cardBg} overflow-hidden`}>
         <CardContent className="p-0 flex flex-col h-full">
           <div className={`flex items-center justify-between border-b px-4 py-3 ${darkMode ? "border-slate-800" : "border-gray-200"}`}>
             <div className="flex items-center gap-2">
@@ -488,7 +768,7 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
               <Button
                 disabled={!canPrev || loading}
                 onClick={() => setPage((p) => Math.max(0, p - 1))}
-                className={`${darkMode ? "border-slate-700 bg-slate-900 text-slate-200" : "border-gray-300 bg-white text-gray-800"} disabled:opacity-40`}
+                className={`${darkMode ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800" : "border-gray-300 bg-white text-gray-800 hover:bg-gray-50"} disabled:opacity-40 disabled:cursor-not-allowed transition`}
               >
                 <ChevronLeft className="h-4 w-4" />
                 Prev
@@ -496,7 +776,7 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
               <Button
                 disabled={!canNext || loading}
                 onClick={() => setPage((p) => p + 1)}
-                className={`${darkMode ? "border-slate-700 bg-slate-900 text-slate-200" : "border-gray-300 bg-white text-gray-800"} disabled:opacity-40`}
+                className={`${darkMode ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800" : "border-gray-300 bg-white text-gray-800 hover:bg-gray-50"} disabled:opacity-40 disabled:cursor-not-allowed transition`}
               >
                 Next
                 <ChevronRight className="h-4 w-4" />
@@ -515,7 +795,7 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
               </div>
             ) : (
               <table className="min-w-full text-left text-sm">
-                <thead className={darkMode ? "bg-slate-900 text-slate-400" : "bg-gray-50 text-gray-500"}>
+                <thead className={`sticky top-0 ${darkMode ? "bg-slate-900 text-slate-400" : "bg-gray-50 text-gray-500"}`}>
                   <tr>
                     <th className="px-4 py-2 w-40">Timestamp</th>
                     <th className="px-4 py-2 w-32">Parser</th>
@@ -525,7 +805,13 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
                 </thead>
                 <tbody className={darkMode ? "divide-y divide-slate-800 text-slate-100" : "divide-y divide-gray-100 text-gray-900"}>
                   {results.map((hit) => (
-                    <tr key={hit.id}>
+                    <tr
+                      key={hit.id}
+                      onClick={() => setSelectedEvent(hit)}
+                      className={`cursor-pointer transition ${
+                        darkMode ? "hover:bg-slate-800/50" : "hover:bg-gray-100"
+                      }`}
+                    >
                       <td className="px-4 py-2 text-xs text-slate-400">{hit.timestamp || "-"}</td>
                       <td className="px-4 py-2 text-xs">{hit.parser || hit.doc["source.parser"] || "-"}</td>
                       <td className="px-4 py-2 text-xs">{hit.message}</td>
@@ -539,7 +825,7 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(260px,320px)_1fr] gap-4 flex-1 min-h-0 w-full">
         <Card className={cardBg}>
           <CardContent className="p-4 space-y-3">
             <div className="flex items-center gap-3">
@@ -551,7 +837,7 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
                   darkMode ? "border-slate-700 bg-slate-900 text-slate-50" : "border-gray-300 bg-white text-gray-900"
                 }`}
               >
-                {COMMON_FIELDS.map((field) => (
+                {aggregationFieldOptions.map((field) => (
                   <option key={field.value} value={field.value}>
                     {field.label}
                   </option>
@@ -570,32 +856,46 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
                   </option>
                 ))}
               </select>
+              <Button
+                onClick={() => setAggCollapsed((prev) => !prev)}
+                className={`text-xs px-2 py-1 ${
+                  darkMode ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800" : "border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
+                }`}
+              >
+                {aggCollapsed ? "Expand" : "Reduce"}
+              </Button>
             </div>
-            {aggLoading ? (
-              <p className={`text-sm ${textWeak}`}>Loading aggregations…</p>
-            ) : aggBuckets.length === 0 ? (
-              <p className={`text-sm ${textWeak}`}>No buckets.</p>
+            {aggCollapsed ? (
+              <p className={`text-xs italic ${textWeak}`}>Aggregation panel reduced. Click Expand to view buckets.</p>
             ) : (
-              <div className="space-y-2">
-                {aggBuckets.map((bucket) => (
-                  <button
-                    key={bucket.key}
-                    onClick={() => handleBucketClick(bucket)}
-                    className={`w-full flex items-center justify-between rounded-lg border px-3 py-2 text-left transition ${
-                      darkMode ? "border-slate-800 hover:bg-slate-800" : "border-gray-200 hover:bg-gray-50"
-                    }`}
-                  >
-                    <span className="text-sm truncate">{bucket.key || "<empty>"}</span>
-                    <span className="text-xs font-semibold">{bucket.count}</span>
-                  </button>
-                ))}
+              <div className="max-h-64 overflow-auto">
+                {aggLoading ? (
+                  <p className={`text-sm ${textWeak}`}>Loading aggregations…</p>
+                ) : aggBuckets.length === 0 ? (
+                  <p className={`text-sm ${textWeak}`}>No buckets.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {aggBuckets.map((bucket) => (
+                      <button
+                        key={bucket.key}
+                        onClick={() => handleBucketClick(bucket)}
+                        className={`w-full flex items-center justify-between rounded-lg border px-3 py-2 text-left transition active:scale-95 ${
+                          darkMode ? "border-slate-800 hover:bg-slate-800 hover:border-violet-600/30" : "border-gray-200 hover:bg-gray-50 hover:border-violet-300"
+                        }`}
+                      >
+                        <span className="text-sm truncate">{bucket.key || "<empty>"}</span>
+                        <span className="text-xs font-semibold">{bucket.count}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </CardContent>
         </Card>
 
-        <Card className={cardBg}>
-          <CardContent className="p-4 space-y-3">
+        <Card className={`${cardBg} h-full`}>
+          <CardContent className="p-4 space-y-3 h-full flex flex-col min-h-0">
             <div className="flex items-center gap-3">
               <span className={`text-sm font-semibold ${textStrong}`}>Timeline</span>
               <select
@@ -612,29 +912,52 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
                 ))}
               </select>
             </div>
-            {timelineLoading ? (
-              <p className={`text-sm ${textWeak}`}>Loading timeline…</p>
-            ) : timelineBuckets.length === 0 ? (
-              <p className={`text-sm ${textWeak}`}>No timeline data.</p>
-            ) : (
-              <div className="space-y-1 max-h-64 overflow-auto text-xs font-mono">
-                {timelineBuckets.map((bucket) => (
-                  <div key={bucket.timestamp} className="flex items-center gap-2">
-                    <span className="w-40 truncate">{bucket.timestamp}</span>
-                    <div className="flex-1 h-2 rounded bg-violet-500/30">
-                      <div
-                        className="h-2 rounded bg-violet-500"
-                        style={{ width: `${(bucket.count / maxTimelineCount) * 100}%` }}
-                      />
+            <div className="flex-1 min-h-0 flex flex-col gap-4">
+              {timelineLoading ? (
+                <p className={`text-sm ${textWeak}`}>Loading timeline…</p>
+              ) : timelineBuckets.length === 0 ? (
+                <p className={`text-sm ${textWeak}`}>No timeline data.</p>
+              ) : (
+                <>
+                  <div className="overflow-x-auto pb-2">
+                    <div className="flex items-end gap-2 min-h-[200px]">
+                      {timelineBuckets.map((bucket) => {
+                        const heightPercent = maxTimelineCount ? Math.max((bucket.count / maxTimelineCount) * 100, 4) : 0;
+                        return (
+                          <div key={`bar-${bucket.timestamp}`} className="flex flex-col items-center gap-1 min-w-[38px]">
+                            <div
+                              className={`w-4 sm:w-5 rounded-t ${darkMode ? "bg-violet-500/80" : "bg-violet-600/80"}`}
+                              style={{ height: `${heightPercent}%` }}
+                              title={`${bucket.timestamp} • ${bucket.count}`}
+                            />
+                            <span className={`text-[10px] text-center leading-tight ${textWeak}`}>{formatTimelineLabel(bucket.timestamp)}</span>
+                            <span className={`text-[11px] font-semibold ${textStrong}`}>{bucket.count}</span>
+                          </div>
+                        );
+                      })}
                     </div>
-                    <span>{bucket.count}</span>
                   </div>
-                ))}
-              </div>
-            )}
+                  <div className="max-h-36 overflow-auto space-y-1 text-xs font-mono">
+                    {timelineBuckets.map((bucket) => (
+                      <div
+                        key={`row-${bucket.timestamp}`}
+                        className={`flex items-center justify-between rounded border px-2 py-1 ${
+                          darkMode ? "border-slate-800 bg-slate-900/40" : "border-gray-200 bg-gray-50"
+                        }`}
+                      >
+                        <span className="truncate pr-2">{bucket.timestamp}</span>
+                        <span>{bucket.count}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>
+    </div>
+      {renderEventDetail()}
     </div>
   );
 }

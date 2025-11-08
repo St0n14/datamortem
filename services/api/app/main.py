@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
 from .db import Base, engine
-from .routers import pipeline, events, case, evidence, artifacts, search, indexing
+from .routers import pipeline, events, case, evidence, artifacts, search, indexing, auth
 from .opensearch.client import close_opensearch_client
 
 # Assure que les tables existent (SQLite dev mode)
@@ -23,6 +23,7 @@ app.add_middleware(
 )
 
 # routes
+app.include_router(auth.router)                       # Authentication (no prefix, has /api/auth in router)
 app.include_router(case.router, prefix="/api")
 app.include_router(evidence.router, prefix="/api")
 app.include_router(pipeline.router, prefix="/api")

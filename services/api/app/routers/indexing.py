@@ -7,7 +7,8 @@ from typing import Optional
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from ..db import get_db
-from ..models import TaskRun, Case, Evidence
+from ..models import TaskRun, Case, Evidence, User
+from ..auth.dependencies import get_current_active_user
 from ..tasks.index_results import index_results_task, bulk_index_case_results
 import logging
 
@@ -61,7 +62,8 @@ class IndexStatusResponse(BaseModel):
 @router.post("/task-run", response_model=IndexTaskRunResponse)
 def index_task_run(
     req: IndexTaskRunRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
 ):
     """
     Déclenche l'indexation des résultats d'un TaskRun spécifique.
@@ -128,7 +130,8 @@ def index_task_run(
 @router.post("/case", response_model=IndexCaseResponse)
 def index_case(
     req: IndexCaseRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
 ):
     """
     Déclenche l'indexation de tous les résultats d'un case.
@@ -200,7 +203,8 @@ def index_case(
 @router.get("/status/{task_run_id}", response_model=IndexStatusResponse)
 def get_indexing_status(
     task_run_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
 ):
     """
     Récupère le statut d'indexation d'un TaskRun.
@@ -229,7 +233,8 @@ def get_indexing_status(
 @router.get("/case/{case_id}/summary")
 def get_case_indexing_summary(
     case_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
 ):
     """
     Récupère un résumé de l'état d'indexation d'un case.

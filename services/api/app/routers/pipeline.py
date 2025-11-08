@@ -6,7 +6,8 @@ from typing import List, Optional
 from datetime import datetime
 
 from ..db import SessionLocal
-from ..models import AnalysisModule, TaskRun, Evidence
+from ..models import AnalysisModule, TaskRun, Evidence, User
+from ..auth.dependencies import get_current_active_user
 from ..celery_app import celery_app
 
 # Tasks concrètes
@@ -103,11 +104,12 @@ def serialize_task_run(r: TaskRun) -> TaskRunOut:
 def get_pipeline(
     evidence_uid: Optional[str] = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
 ):
     """
     Retourne les modules d'analyse (AnalysisModule) et
     leur dernier run connu (TaskRun), filtré éventuellement
-    sur une evidence.
+    sur une evidence. (Requires authentication)
     """
 
     modules = db.execute(select(AnalysisModule)).scalars().all()
@@ -143,9 +145,10 @@ def get_pipeline(
 def list_task_runs(
     evidence_uid: Optional[str] = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
 ):
     """
-    Liste les TaskRuns récents, optionnellement filtrés par evidence_uid.
+    Liste les TaskRuns récents, optionnellement filtrés par evidence_uid. (Requires authentication)
     Tri: plus récents d'abord.
     """
     run_q = select(TaskRun).order_by(desc(TaskRun.id))
@@ -157,7 +160,11 @@ def list_task_runs(
 
 
 @router.post("/pipeline/run")
-def run_pipeline_module(payload: RunRequest, db: Session = Depends(get_db)):
+def run_pipeline_module(
+    payload: RunRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
     """
     Lance UN module sur une evidence.
     Le module DOIT exister en DB (analysis_modules) et être enabled.
@@ -229,7 +236,11 @@ def run_pipeline_module(payload: RunRequest, db: Session = Depends(get_db)):
         "progress_message": tr.progress_message,
     }
 @router.post("/pipeline/run/all")
-def run_all_pipeline(evidence_uid: str, db: Session = Depends(get_db)):
+def run_all_pipeline(
+    evidence_uid: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
     """
     Optionnel : lance TOUS les modules enabled pour une evidence donnée.
     Renvoie la liste des TaskRuns créés.
@@ -304,7 +315,11 @@ def run_all_pipeline(evidence_uid: str, db: Session = Depends(get_db)):
 
 
 @router.post("/pipeline/run/{task_run_id}/kill")
-def kill_run(task_run_id: int, db: Session = Depends(get_db)):
+def kill_run(
+    task_run_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
     """
     Demande l'arrêt d'un run en cours (queued/running).
     NOTE: avec Celery en mode eager (dev), ça ne tue rien en vrai,
@@ -335,12 +350,14 @@ def kill_run(task_run_id: int, db: Session = Depends(get_db)):
 @router.patch("/pipeline/run/{task_run_id}/status")
 def update_task_run_status(
     task_run_id: int,
-    body: TaskRunStatusUpdate,
+    body: dict,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
 ):
     """
     Endpoint technique pour mettre à jour manuellement le statut d'un run
     (utile si on branche un worker externe plus tard ou pour debug).
+    (Requires authentication)
     """
 
     run_obj = db.execute(

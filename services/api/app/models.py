@@ -16,6 +16,34 @@ from .db import Base
 
 
 # -----------------
+# User
+# -----------------
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    email: Mapped[str] = mapped_column(String, unique=True, index=True)
+    username: Mapped[str] = mapped_column(String, unique=True, index=True)
+    hashed_password: Mapped[str] = mapped_column(String)
+    full_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    # Role-based access control
+    role: Mapped[str] = mapped_column(String, default="analyst")  # admin, analyst, viewer
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_superuser: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    created_at_utc: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_login_utc: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    # Relations
+    cases: Mapped[List["Case"]] = relationship(
+        "Case",
+        back_populates="owner",
+        cascade="all, delete-orphan",
+    )
+
+
+# -----------------
 # Case
 # -----------------
 class Case(Base):
@@ -31,7 +59,20 @@ class Case(Base):
     # Remplace "description" par "note"
     note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+    # Owner (user who created the case)
+    owner_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("users.id"),
+        nullable=True,
+        index=True,
+    )
+
     # relations
+    owner: Mapped[Optional["User"]] = relationship(
+        "User",
+        back_populates="cases",
+    )
+
     evidences: Mapped[List["Evidence"]] = relationship(
         "Evidence",
         back_populates="case",

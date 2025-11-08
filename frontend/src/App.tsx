@@ -1,7 +1,11 @@
 import { useState, useEffect } from "react";
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { LoginView } from "./views/LoginView";
+import { Header } from "./components/Header";
 import { PipelineView } from "./components/PipelineView";
 import { EvidencesView } from "./views/EvidencesView";
 import { ExplorerView } from "./views/ExplorerView";
+import { casesAPI, searchAPI } from "./services/api";
 import {
   Skull,
   Sun,
@@ -39,12 +43,16 @@ type CaseSummary = {
   created_at_utc?: string;
 };
 
-export default function App() {
+// Main authenticated app component
+function AuthenticatedApp() {
   const [darkMode, setDarkMode] = useState(true);
   const [activeTab, setActiveTab] =
     useState<"timeline" | "pipeline" | "rules" | "evidences" | "explorer">("timeline");
 
-  const [currentCaseId, setCurrentCaseId] = useState<string>("test_pc_001");
+  // Load current case from localStorage or use default
+  const [currentCaseId, setCurrentCaseId] = useState<string>(() => {
+    return localStorage.getItem('currentCaseId') || '';
+  });
   const [selectedEvidenceUid] = useState<string | null>("evidence_pc_001");
   const [cases, setCases] = useState<CaseSummary[]>([]);
   const [casesRefreshToken, setCasesRefreshToken] = useState(0);
@@ -76,26 +84,13 @@ export default function App() {
 
   const loadEventsFromOpenSearch = async () => {
     try {
-      const res = await fetch('/api/search/query', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: query,
-          case_id: currentCaseId,
-          size: 100,
-          sort_by: '@timestamp',
-          sort_order: 'desc',
-        }),
+      const data = await searchAPI.query({
+        query: query,
+        case_id: currentCaseId,
+        size: 100,
+        sort_by: '@timestamp',
+        sort_order: 'desc',
       });
-
-      if (!res.ok) {
-        console.error('Search failed');
-        setEvents([]);
-        setSelectedEventId(null);
-        return;
-      }
-
-      const data = await res.json();
 
       // Convert OpenSearch hits to EventRow format
       const eventRows: EventRow[] = data.hits.map((hit: any, index: number) => ({
@@ -120,11 +115,7 @@ export default function App() {
 
   const loadCases = async () => {
     try {
-      const res = await fetch("/api/cases");
-      if (!res.ok) {
-        throw new Error("Failed to load cases");
-      }
-      const data: CaseSummary[] = await res.json();
+      const data = await casesAPI.list();
       setCases(data);
       if (data.length > 0) {
         setCurrentCaseId((prev) => {
@@ -150,7 +141,11 @@ export default function App() {
   const handleCaseSelect = (caseId: string) => {
     setSelectedEventId(null);
     setCurrentCaseId(caseId);
-    if (!caseId) {
+    // Persist to localStorage
+    if (caseId) {
+      localStorage.setItem('currentCaseId', caseId);
+    } else {
+      localStorage.removeItem('currentCaseId');
       setEvents([]);
     }
   };
@@ -190,9 +185,9 @@ export default function App() {
     <div className={`flex h-screen w-full font-sans ${bgApp}`}>
 
       {/* MAIN */}
-      <main className={`flex flex-1 min-w-0 p-4 gap-4 overflow-hidden ${darkMode ? "bg-slate-950" : "bg-gray-50"}`}>
+      <main className={`flex flex-1 min-w-0 min-h-0 p-4 gap-4 overflow-auto ${darkMode ? "bg-slate-950" : "bg-gray-50"}`}>
         {/* COLONNE CENTRALE */}
-        <section className="flex flex-col flex-[2] min-w-0 gap-4">
+        <section className="flex flex-col flex-[2] min-w-0 min-h-0 gap-4">
           <header
             className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border px-3 py-2 ${
               darkMode
@@ -582,4 +577,44 @@ export default function App() {
 
 function WrenchIcon({ size = 16 }: { size?: number }) {
   return <Wrench className="h-4 w-4" style={{ height: size, width: size }} />;
+}
+
+// Wrapper component that handles authentication
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
+  );
+}
+
+function AppContent() {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div style={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        height: '100vh',
+        backgroundColor: '#0a0e1a',
+        color: '#fff',
+        fontSize: '14px'
+      }}>
+        Loading...
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <LoginView />;
+  }
+
+  return (
+    <>
+      <Header />
+      <AuthenticatedApp />
+    </>
+  );
 }

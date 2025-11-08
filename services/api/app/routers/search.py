@@ -24,6 +24,8 @@ from ..opensearch.search import (
     build_bool_query,
 )
 from ..config import settings
+from ..models import User
+from ..auth.dependencies import get_current_active_user
 import logging
 
 logger = logging.getLogger(__name__)
@@ -39,7 +41,8 @@ def get_opensearch_client_dep():
 @router.post("/query", response_model=SearchResponse)
 def search_case_events(
     req: SearchRequest,
-    client=Depends(get_opensearch_client_dep)
+    client=Depends(get_opensearch_client_dep),
+    current_user: User = Depends(get_current_active_user)
 ):
     """
     Recherche dans les événements d'un case.
@@ -98,7 +101,8 @@ def search_case_events(
 @router.post("/aggregate", response_model=AggregationResponse)
 def aggregate_case_field(
     req: AggregationRequest,
-    client=Depends(get_opensearch_client_dep)
+    client=Depends(get_opensearch_client_dep),
+    current_user: User = Depends(get_current_active_user)
 ):
     """
     Agrégation terms sur un champ.
@@ -158,12 +162,13 @@ def aggregate_case_field(
 @router.post("/timeline", response_model=TimelineResponse)
 def get_case_timeline(
     req: TimelineRequest,
-    client=Depends(get_opensearch_client_dep)
+    client=Depends(get_opensearch_client_dep),
+    current_user: User = Depends(get_current_active_user)
 ):
     """
     Agrégation temporelle pour générer une timeline.
 
-    Retourne le nombre d'événements par intervalle de temps.
+    Retourne le nombre d'événements par intervalle de temps. (Requires authentication)
 
     Intervals supportés:
     - `1m` - 1 minute
@@ -221,10 +226,11 @@ def get_case_timeline(
 @router.get("/stats/{case_id}", response_model=IndexStatsResponse)
 def get_case_index_stats(
     case_id: str,
-    client=Depends(get_opensearch_client_dep)
+    client=Depends(get_opensearch_client_dep),
+    current_user: User = Depends(get_current_active_user)
 ):
     """
-    Récupère les statistiques de l'index d'un case.
+    Récupère les statistiques de l'index d'un case. (Requires authentication)
 
     Retourne:
     - Nombre de documents

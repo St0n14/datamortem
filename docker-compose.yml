@@ -98,6 +98,7 @@ services:
       - DM_OPENSEARCH_SCHEME=http
       - DM_ALLOWED_ORIGINS=http://localhost:5174,http://127.0.0.1:5174,http://frontend:5174
       - DM_LAKE_ROOT=/lake
+      - DM_JWT_SECRET=${DM_JWT_SECRET:-dev_secret_key_change_in_production_12345678}
     ports:
       - "8000:8000"
     volumes:

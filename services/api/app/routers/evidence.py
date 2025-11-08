@@ -8,7 +8,8 @@ import zipfile
 import shutil
 
 from ..db import SessionLocal
-from ..models import Evidence, Case
+from ..models import Evidence, Case, User
+from ..auth.dependencies import get_current_active_user
 
 router = APIRouter()
 
@@ -56,9 +57,11 @@ class EvidenceOut(BaseModel):
 def list_evidences(
     case_id: Optional[str] = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
 ):
     """
     Retourne toutes les evidences, ou seulement celles liées à un case_id donné.
+    (Requires authentication)
     """
     q = db.query(Evidence)
     if case_id:
@@ -71,9 +74,11 @@ def list_evidences(
 def create_evidence(
     payload: EvidenceIn,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
 ):
     """
     Déclare une nouvelle evidence dans une investigation.
+    (Requires authentication)
     """
 
     # 1. Vérifier que la case existe
@@ -147,11 +152,13 @@ async def upload_evidence(
     evidence_uid: str = Form(...),
     case_id: str = Form(...),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
 ):
     """
     Upload d'une evidence (ZIP Velociraptor offline collector).
 
     Le ZIP sera conservé tel quel pour parsing ultérieur avec dissect.
+    (Requires authentication)
     """
 
     # 1. Vérifier que la case existe

@@ -4,6 +4,7 @@ import { Button } from "../components/ui/Button";
 import { Input } from "../components/ui/Input";
 import { Badge } from "../components/ui/Badge";
 import { Plus, HardDrive, Trash2, X } from "lucide-react";
+import { casesAPI, evidenceAPI } from "../services/api";
 
 interface Evidence {
   id: number;
@@ -69,9 +70,7 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
 
   const loadCases = async () => {
     try {
-      const res = await fetch("/api/cases");
-      if (!res.ok) throw new Error("Failed to load cases");
-      const data = await res.json();
+      const data = await casesAPI.list();
       setCases(data);
       return data as Case[];
     } catch (err) {
@@ -83,12 +82,7 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
   const loadEvidences = async () => {
     setLoading(true);
     try {
-      const url = currentCaseId
-        ? `/api/evidences?case_id=${currentCaseId}`
-        : `/api/evidences`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error("Failed to load evidences");
-      const data = await res.json();
+      const data = await evidenceAPI.list(currentCaseId || undefined);
       setEvidences(data);
     } catch (err) {
       console.error("Failed to load evidences:", err);
@@ -115,21 +109,7 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
     setUploading(true);
 
     try {
-      const formData = new FormData();
-      formData.append("file", selectedFile);
-      formData.append("evidence_uid", newEvidence.evidence_uid);
-      formData.append("case_id", newEvidence.case_id);
-
-      const res = await fetch("/api/evidences/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.detail || "Failed to upload evidence");
-      }
-
+      await evidenceAPI.upload(selectedFile, newEvidence.evidence_uid, newEvidence.case_id);
       setSuccess("Evidence uploaded and extracted successfully!");
       setShowAddModal(false);
       setNewEvidence({
@@ -156,17 +136,7 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
     }
 
     try {
-      const res = await fetch("/api/cases", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newCase),
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.detail || "Failed to create case");
-      }
-
+      await casesAPI.create(newCase);
       setSuccess("Case created successfully!");
       setShowAddCaseModal(false);
       const createdCaseId = newCase.case_id;
@@ -193,20 +163,10 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
     setSuccess(null);
 
     try {
-      const res = await fetch(`/api/cases/${currentCaseId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          note: caseNoteDraft,
-          status: caseStatusDraft,
-        }),
+      await casesAPI.update(currentCaseId, {
+        note: caseNoteDraft,
+        status: caseStatusDraft,
       });
-
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.detail || "Failed to update case");
-      }
-
       setSuccess("Case updated");
       onCasesUpdated?.();
       await loadCases();
@@ -225,14 +185,7 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
     setSuccess(null);
 
     try {
-      const res = await fetch(`/api/cases/${currentCaseId}`, {
-        method: "DELETE",
-      });
-
-      if (!res.ok && res.status !== 204) {
-        const errorData = await res.json();
-        throw new Error(errorData.detail || "Failed to delete case");
-      }
+      await casesAPI.delete(currentCaseId);
 
       setSuccess("Case deleted");
       const updatedCases = await loadCases();

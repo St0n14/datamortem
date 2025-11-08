@@ -1,17 +1,17 @@
 from typing import List, Any, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 
 
 class Settings(BaseSettings):
-    dm_env: str = "dev"
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    dm_env: str = "development"
     dm_db_url: str = "sqlite:///./dev.db"
 
-    # ⚠️ IMPORTANT : on force le type brut à str | None au lieu de List[str]
-    # pour empêcher pydantic_settings de tenter json.loads() trop tôt.
-    dm_allowed_origins: Optional[str] = (
-        "http://127.0.0.1:5174,http://localhost:5174"
-    )
+    dm_api_base_url: str = "http://localhost:8000"
+
+    dm_allowed_origins: Optional[str] = None
 
     dm_lake_root: str = "/lake"
 
@@ -21,23 +21,34 @@ class Settings(BaseSettings):
     # OpenSearch Configuration
     dm_opensearch_host: str = "localhost"
     dm_opensearch_port: int = 9200
-    dm_opensearch_scheme: str = "http"              # "http" dev, "https" prod
-    dm_opensearch_user: Optional[str] = None        # None = no auth (dev)
+    dm_opensearch_scheme: str = "http"
+    dm_opensearch_user: Optional[str] = None
     dm_opensearch_password: Optional[str] = None
-    dm_opensearch_verify_certs: bool = False        # Dev: False, Prod: True
-    dm_opensearch_ssl_show_warn: bool = False       # Pas de warnings SSL en dev
+    dm_opensearch_verify_certs: bool = False
+    dm_opensearch_ssl_show_warn: bool = False
 
     # Index Configuration
-    dm_opensearch_index_prefix: str = "datamortem"  # prefix pour tous les index
-    dm_opensearch_shard_count: int = 1              # Dev: 1, Prod: 3+
-    dm_opensearch_replica_count: int = 0            # Dev: 0, Prod: 1+
-    dm_opensearch_batch_size: int = 500             # Bulk indexing batch size
-    dm_opensearch_max_retries: int = 3              # Retry failed indexing
+    dm_opensearch_index_prefix: str = "datamortem"
+    dm_opensearch_shard_count: int = 1
+    dm_opensearch_replica_count: int = 0
+    dm_opensearch_batch_size: int = 500
+    dm_opensearch_max_retries: int = 3
 
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        extra="ignore",
-    )
+    dm_jwt_secret: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_non_default_urls(self) -> "Settings":
+        if self.dm_env in {"production", "staging"}:
+            if self.dm_db_url.startswith("sqlite:///"):
+                raise ValueError(
+                    "SQLite cannot be used in staging/production. "
+                    "Set dm_db_url to your managed database."
+                )
+            if self.dm_celery_broker.startswith("memory://"):
+                raise ValueError(
+                    "Celery broker must not be memory:// in staging/production."
+                )
+        return self
 
     @field_validator("dm_allowed_origins", mode="before")
     @classmethod
@@ -61,10 +72,6 @@ class Settings(BaseSettings):
         return str(v)
 
     def allowed_origins_list(self) -> List[str]:
-        """
-        C'est CE getter qu'on utilisera dans main.py pour configurer CORS.
-        Il renvoie toujours une liste de strings.
-        """
         default_list = [
             "http://127.0.0.1:5174",
             "http://localhost:5174",

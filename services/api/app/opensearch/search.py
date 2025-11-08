@@ -5,7 +5,7 @@ Provides query builders and search utilities.
 """
 
 from opensearchpy import OpenSearch
-from typing import Optional, Dict, List, Any, Tuple
+from typing import Optional, Dict, List, Any, Tuple, Union
 import logging
 
 logger = logging.getLogger(__name__)
@@ -53,6 +53,19 @@ def build_term_filters(filters: Dict[str, Any]) -> List[dict]:
     ]
 
 
+def _scalar_clause(field: str, value: Any, operator: str) -> dict:
+    """
+    Helper that chooses term vs match_phrase depending on value type.
+    """
+    if isinstance(value, (int, float, bool)):
+        return {"term": {field: value}}
+    if field.endswith(".keyword"):
+        return {"term": {field: value}}
+    if operator in {"contains", "equals"}:
+        return {"match_phrase": {field: value}}
+    return {"term": {field: value}}
+
+
 def build_field_filter_clauses(
     field_filters: List[Dict[str, Any]]
 ) -> Tuple[List[dict], List[dict]]:
@@ -79,10 +92,10 @@ def build_field_filter_clauses(
         clause: Optional[dict] = None
 
         if operator == "equals":
-            clause = {"term": {field: value}}
+            clause = _scalar_clause(field, value, operator)
             must.append(clause)
         elif operator == "not_equals":
-            clause = {"term": {field: value}}
+            clause = _scalar_clause(field, value, operator)
             must_not.append(clause)
         elif operator == "contains":
             clause = {"match_phrase": {field: value}}
