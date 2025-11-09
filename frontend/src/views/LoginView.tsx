@@ -47,7 +47,7 @@ export const LoginView: React.FC = () => {
             ))}
           </ul>
         </div>
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/80">
+        <div className="rounded-2xl border border-white/10 bg-slate-50/5 p-4 text-sm text-white/80">
           <p className="font-semibold">Roadmap cloud</p>
           <p className="text-white/70">
             Provisionnez l'infra sur un projet GCP (Cloud Run ou GKE) et laissez vos utilisateurs créer leur compte directement depuis cette page.

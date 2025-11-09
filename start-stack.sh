@@ -16,15 +16,23 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# 0. Vérifier le secret JWT
+if [ -z "$DM_JWT_SECRET" ]; then
+  echo -e "${YELLOW}⚠️  DM_JWT_SECRET non défini. Génération d'une clé temporaire (dev only).${NC}"
+  export DM_JWT_SECRET=$(openssl rand -hex 32)
+  echo "    -> Secret généré: $DM_JWT_SECRET"
+fi
+
 # 1. Démarrer tous les services Docker (incluant API, Celery, Frontend)
 echo -e "${BLUE}[1/3]${NC} Démarrage des services Docker..."
 echo "   - PostgreSQL"
 echo "   - Redis"
 echo "   - OpenSearch"
 echo "   - OpenSearch Dashboards"
-echo "   - Backend API"
-echo "   - Celery Worker"
+echo "   - Backend API (scalable)"
+echo "   - Celery Worker (scalable)"
 echo "   - Frontend React"
+echo "   - Traefik (reverse proxy/load balancer)"
 docker-compose up -d --build
 echo -e "${GREEN}✅ Services Docker démarrés${NC}"
 echo ""
@@ -56,8 +64,8 @@ else
     echo -e " ${GREEN}OK${NC}"
 fi
 
-echo -n "   Backend API..."
-until curl -s http://localhost:8000/docs > /dev/null 2>&1; do
+echo -n "   Backend API (via Traefik)..."
+until curl -s http://localhost:8080/health > /dev/null 2>&1; do
     sleep 1
 done
 echo -e " ${GREEN}OK${NC}"
@@ -82,8 +90,8 @@ echo "=================================================="
 echo ""
 echo "Services disponibles:"
 echo "  🌐 Frontend:            http://localhost:5174"
-echo "  🔌 API:                 http://localhost:8000"
-echo "  📖 API Docs:            http://localhost:8000/docs"
+echo "  🔌 API (Traefik):       http://localhost:8080"
+echo "  📖 API Docs:            http://localhost:8080/docs"
 echo "  🔍 OpenSearch:          http://localhost:9200"
 echo "  📊 OpenSearch Dashboards: http://localhost:5601"
 echo "  🗄️  PostgreSQL:          localhost:5432"
@@ -92,11 +100,14 @@ echo ""
 echo "Logs Docker:"
 echo "  📝 API:        docker logs -f datamortem-api"
 echo "  📝 Celery:     docker logs -f datamortem-celery"
+echo "  📝 Traefik:    docker logs -f datamortem-traefik"
 echo "  📝 Frontend:   docker logs -f datamortem-frontend"
 echo "  📝 OpenSearch: docker logs -f datamortem-opensearch"
 echo ""
 echo "Commandes utiles:"
-echo "  Voir tous les logs:     docker-compose logs -f"
-echo "  Arrêter la stack:       docker-compose down"
-echo "  Rebuild & restart:      docker-compose up -d --build"
+echo "  Voir tous les logs:           docker-compose logs -f"
+echo "  Arrêter la stack:             docker-compose down"
+echo "  Rebuild & restart:            docker-compose up -d --build"
+echo "  Ajouter des réplicas API:     docker-compose up -d --scale api=2"
+echo "  Ajouter des workers Celery:   docker-compose up -d --scale celery-worker=2"
 echo ""

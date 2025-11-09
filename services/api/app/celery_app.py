@@ -16,6 +16,7 @@ celery_app = Celery(
         "app.tasks.generate_test_events",  # Test event generator
         "app.tasks.parse_dissect",   # Dissect forensic parser
         "app.tasks.dissect_mft",     # Dedicated MFT extraction via dissect.target
+        "app.tasks.run_custom_script",
         # "app.tasks.parse_registry",
         # "app.tasks.parse_users",
     ],

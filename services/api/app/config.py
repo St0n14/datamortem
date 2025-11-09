@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     dm_env: str = "development"
     dm_db_url: str = "sqlite:///./dev.db"
 
-    dm_api_base_url: str = "http://localhost:8000"
+    dm_api_base_url: str = "http://localhost:8080"
 
     dm_allowed_origins: Optional[str] = None
 
@@ -48,6 +48,18 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "Celery broker must not be memory:// in staging/production."
                 )
+        return self
+
+    @model_validator(mode="after")
+    def ensure_secure_secret(self) -> "Settings":
+        """
+        Ensure dm_jwt_secret is defined and sufficiently strong.
+        """
+        if not self.dm_jwt_secret or len(self.dm_jwt_secret.strip()) < 32:
+            raise ValueError(
+                "dm_jwt_secret must be set to a random string with at least 32 characters. "
+                "Update your environment (.env) before starting the API."
+            )
         return self
 
     @field_validator("dm_allowed_origins", mode="before")

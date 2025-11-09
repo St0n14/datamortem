@@ -3,7 +3,7 @@
 # Script de test des endpoints OpenSearch de l'API dataMortem
 # Usage: ./test_api_search.sh
 
-API_BASE="http://localhost:8000/api"
+API_BASE="http://localhost:8080/api"
 CASE_ID="test_case_001"
 
 echo "=================================================="
@@ -20,7 +20,7 @@ NC='\033[0m' # No Color
 # Test 1: Health check
 echo "Test 1: Health check OpenSearch"
 echo "-------------------------------"
-response=$(curl -s http://localhost:8000/health)
+response=$(curl -s http://localhost:8080/health)
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✅ API accessible${NC}"
     echo "$response" | jq '.'

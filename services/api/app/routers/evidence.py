@@ -19,6 +19,9 @@ from ..auth.permissions import (
 
 router = APIRouter()
 
+STANDARD_CASE_LIMIT = 1
+STANDARD_STORAGE_LIMIT_BYTES = 20 * 1024 * 1024 * 1024  # 20 GiB
+
 # ------------------------
 # DB session dependency
 # ------------------------
@@ -200,8 +203,9 @@ async def upload_evidence(
 
     try:
         # Écrire le fichier uploadé
+        content = await file.read()
+        enforce_storage_limit(db, case_id, len(content), current_user)
         with open(zip_path, "wb") as buffer:
-            content = await file.read()
             buffer.write(content)
 
         # 6. Valider que c'est un collector Velociraptor
@@ -239,3 +243,24 @@ async def upload_evidence(
         if os.path.exists(evidence_dir):
             shutil.rmtree(evidence_dir)
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+def get_case_storage_usage(db: Session, case_id: str) -> int:
+    total = 0
+    paths = db.query(Evidence.local_path).filter(Evidence.case_id == case_id).all()
+    for (path,) in paths:
+        if path and os.path.exists(path):
+            try:
+                total += os.path.getsize(path)
+            except OSError:
+                continue
+    return total
+
+
+def enforce_storage_limit(db: Session, case_id: str, additional_bytes: int, current_user: User):
+    if is_admin_user(current_user):
+        return
+    current_usage = get_case_storage_usage(db, case_id)
+    if current_usage + additional_bytes > STANDARD_STORAGE_LIMIT_BYTES:
+        raise HTTPException(
+            status_code=403,
+            detail="Storage limit exceeded (20 GiB per standard case).",
+        )

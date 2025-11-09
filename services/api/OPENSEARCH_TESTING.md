@@ -33,7 +33,7 @@ cd /home/braguette/dataMortem/services/api
 uv run uvicorn app.main:app --reload --port 8000
 ```
 
-L'API sera accessible sur `http://localhost:8000`
+L'API sera accessible sur `http://localhost:8080`
 
 ---
 
@@ -114,7 +114,7 @@ chmod +x test_api_search.sh
 ### 1. Health check OpenSearch
 
 ```bash
-curl http://localhost:8000/api/search/health | jq
+curl http://localhost:8080/api/search/health | jq
 ```
 
 Réponse attendue:
@@ -131,7 +131,7 @@ Réponse attendue:
 ### 2. Recherche simple
 
 ```bash
-curl -X POST http://localhost:8000/api/search/query \
+curl -X POST http://localhost:8080/api/search/query \
   -H "Content-Type: application/json" \
   -d '{
     "query": "svchost.exe",
@@ -144,7 +144,7 @@ curl -X POST http://localhost:8000/api/search/query \
 ### 3. Recherche avec filtres
 
 ```bash
-curl -X POST http://localhost:8000/api/search/query \
+curl -X POST http://localhost:8080/api/search/query \
   -H "Content-Type: application/json" \
   -d '{
     "query": "*",
@@ -158,7 +158,7 @@ curl -X POST http://localhost:8000/api/search/query \
 ### 4. Agrégation
 
 ```bash
-curl -X POST http://localhost:8000/api/search/aggregate \
+curl -X POST http://localhost:8080/api/search/aggregate \
   -H "Content-Type: application/json" \
   -d '{
     "case_id": "test_case_001",
@@ -170,7 +170,7 @@ curl -X POST http://localhost:8000/api/search/aggregate \
 ### 5. Timeline
 
 ```bash
-curl -X POST http://localhost:8000/api/search/timeline \
+curl -X POST http://localhost:8080/api/search/timeline \
   -H "Content-Type: application/json" \
   -d '{
     "case_id": "test_case_001",
@@ -181,7 +181,7 @@ curl -X POST http://localhost:8000/api/search/timeline \
 ### 6. Statistiques d'index
 
 ```bash
-curl http://localhost:8000/api/search/stats/test_case_001 | jq
+curl http://localhost:8080/api/search/stats/test_case_001 | jq
 ```
 
 ---
@@ -321,4 +321,4 @@ Après validation des tests:
 - [Documentation OpenSearch](https://opensearch.org/docs/latest/)
 - [OpenSearch Python Client](https://github.com/opensearch-project/opensearch-py)
 - [OpenSearch Dashboards](http://localhost:5601)
-- [API Documentation](http://localhost:8000/docs) (Swagger UI)
+- [API Documentation](http://localhost:8080/docs) (Swagger UI)

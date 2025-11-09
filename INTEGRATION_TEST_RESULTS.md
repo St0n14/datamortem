@@ -13,7 +13,7 @@ Le test d'intégration complet a été effectué avec succès ! Tous les composa
 
 | Service | Status | URL |
 |---------|--------|-----|
-| **API FastAPI** | ✅ Running | http://localhost:8000 |
+| **API FastAPI** | ✅ Running | http://localhost:8080 |
 | **Frontend React** | ✅ Running | http://localhost:5174 |
 | **PostgreSQL** | ✅ Running | localhost:5432 |
 | **Redis** | ✅ Running | localhost:6379 |

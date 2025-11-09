@@ -10,7 +10,7 @@ from ..config import settings
 
 
 # JWT settings
-SECRET_KEY = settings.dm_jwt_secret or "INSECURE_DEFAULT_SECRET_CHANGE_ME"
+SECRET_KEY = settings.dm_jwt_secret
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
 

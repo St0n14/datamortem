@@ -15,8 +15,9 @@ NC='\033[0m'
 # Arrêter tous les services Docker
 echo "Arrêt de tous les services Docker..."
 echo "  - Frontend React"
-echo "  - Backend API"
-echo "  - Celery Worker"
+echo "  - Backend API (toutes les réplicas)"
+echo "  - Celery Worker (toutes les réplicas)"
+echo "  - Traefik"
 echo "  - OpenSearch Dashboards"
 echo "  - OpenSearch"
 echo "  - Redis"

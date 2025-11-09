@@ -5,6 +5,7 @@ import { Input } from "../components/ui/Input";
 import { Badge } from "../components/ui/Badge";
 import { Plus, HardDrive, Trash2, X } from "lucide-react";
 import { casesAPI, evidenceAPI } from "../services/api";
+import { useAuth } from "../contexts/AuthContext";
 
 interface Evidence {
   id: number;
@@ -57,6 +58,9 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
   const [success, setSuccess] = useState<string | null>(null);
 
   const currentCase = cases.find((c) => c.case_id === currentCaseId);
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+  const canCreateCase = isAdmin || cases.length === 0;
 
   useEffect(() => {
     setCaseNoteDraft(currentCase?.note ?? "");
@@ -72,6 +76,9 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
     try {
       const data = await casesAPI.list();
       setCases(data);
+      if (!currentCaseId && data.length > 0) {
+        onCaseChange?.(data[0].case_id);
+      }
       return data as Case[];
     } catch (err) {
       console.error("Failed to load cases:", err);
@@ -130,6 +137,10 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
     setError(null);
     setSuccess(null);
 
+    if (!canCreateCase) {
+      setError("Vous avez déjà un case. Contactez un administrateur pour en créer un autre.");
+      return;
+    }
     if (!newCase.case_id) {
       setError("Case ID is required");
       return;
@@ -204,10 +215,10 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
     return new Date(dateStr).toLocaleString();
   };
 
-  const bgCard = darkMode ? "bg-slate-900 border-slate-700" : "bg-white border-gray-200";
+  const bgCard = darkMode ? "bg-slate-900 border-slate-700" : "bg-slate-50 border-gray-200";
   const textStrong = darkMode ? "text-slate-100" : "text-gray-900";
   const textWeak = darkMode ? "text-slate-400" : "text-gray-500";
-  const inputBg = darkMode ? "bg-slate-800 border-slate-700 text-slate-200" : "bg-white border-gray-300 text-gray-900";
+  const inputBg = darkMode ? "bg-slate-800 border-slate-700 text-slate-200" : "bg-slate-50 border-gray-300 text-gray-900";
 
   return (
     <div className="flex flex-col gap-4 h-full">
@@ -220,14 +231,22 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
         <div className="flex gap-2">
           <Button
             onClick={() => setShowAddCaseModal(true)}
+            disabled={!canCreateCase}
             className={`${darkMode ? "border-sky-600/30 bg-sky-900/20 text-sky-200 hover:bg-sky-900/30" : "border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100"}`}
+            title={
+              canCreateCase
+                ? "Create a new case"
+                : "Limite atteinte : un seul case par utilisateur standard (demandez à un administrateur)."
+            }
           >
             <Plus className="h-4 w-4 mr-2" />
             New Case
           </Button>
           <Button
             onClick={() => setShowAddModal(true)}
+            disabled={!currentCaseId}
             className={`${darkMode ? "border-violet-600/30 bg-violet-950/40 text-violet-200 hover:bg-violet-900/30" : "border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100"}`}
+            title={currentCaseId ? "Add evidence to the selected case" : "Create or select a case before adding evidences."}
           >
             <Plus className="h-4 w-4 mr-2" />
             Add Evidence
@@ -258,6 +277,14 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
         </Card>
       )}
 
+      {!canCreateCase && (
+        <Card className={`border-amber-500/30 ${darkMode ? "bg-amber-950/20" : "bg-amber-50"}`}>
+          <CardContent className="p-3 text-sm">
+            Vous avez atteint la limite d'un case. Demandez à un administrateur pour en créer d'autres.
+          </CardContent>
+        </Card>
+      )}
+
       {/* Case Selector */}
       <Card className={bgCard}>
         <CardContent className="p-4">
@@ -266,13 +293,18 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
             <select
               value={currentCaseId}
               onChange={(e) => onCaseChange?.(e.target.value)}
+              disabled={cases.length === 0}
               className={`px-3 py-2 rounded-lg border text-sm ${inputBg}`}
             >
-              {cases.map((c) => (
-                <option key={c.case_id} value={c.case_id}>
-                  {c.case_id} - {c.status}
-                </option>
-              ))}
+              {cases.length === 0 ? (
+                <option value="">No cases available</option>
+              ) : (
+                cases.map((c) => (
+                  <option key={c.case_id} value={c.case_id}>
+                    {c.case_id} - {c.status}
+                  </option>
+                ))
+              )}
             </select>
           </div>
         </CardContent>
@@ -308,7 +340,7 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
                 onChange={(e) => setCaseNoteDraft(e.target.value)}
                 rows={3}
                 className={`w-full rounded-lg border px-3 py-2 text-sm resize-none ${
-                  darkMode ? "border-slate-700 bg-slate-900 text-slate-100" : "border-gray-300 bg-white text-gray-900"
+                  darkMode ? "border-slate-700 bg-slate-900 text-slate-100" : "border-gray-300 bg-slate-50 text-gray-900"
                 }`}
                 placeholder="Add investigation notes, context, or summary..."
               />
@@ -320,7 +352,7 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
                 value={caseStatusDraft}
                 onChange={(e) => setCaseStatusDraft(e.target.value)}
                 className={`rounded-lg border px-3 py-2 text-sm ${
-                  darkMode ? "border-slate-700 bg-slate-900 text-slate-100" : "border-gray-300 bg-white text-gray-900"
+                  darkMode ? "border-slate-700 bg-slate-900 text-slate-100" : "border-gray-300 bg-slate-50 text-gray-900"
                 }`}
               >
                 <option value="open">Open</option>
@@ -346,8 +378,19 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
         </Card>
       ) : (
         <Card className={bgCard}>
-          <CardContent className="p-4">
+          <CardContent className="p-4 flex flex-col gap-3">
             <p className={textWeak}>No case selected. Create one to start managing evidences.</p>
+            {canCreateCase ? (
+              <Button
+                onClick={() => setShowAddCaseModal(true)}
+                className={`${darkMode ? "border-sky-600/30 bg-sky-900/20 text-sky-200" : "border-sky-300 bg-sky-50 text-sky-700"}`}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Create first case
+              </Button>
+            ) : (
+              <p className={textWeak}>Demandez à un administrateur de créer un nouveau case.</p>
+            )}
           </CardContent>
         </Card>
       )}
@@ -391,7 +434,7 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
                 </thead>
                 <tbody className={darkMode ? "divide-y divide-slate-800" : "divide-y divide-gray-100"}>
                   {evidences.map((ev) => (
-                    <tr key={ev.id} className={darkMode ? "hover:bg-slate-800/50" : "hover:bg-gray-50"}>
+                    <tr key={ev.id} className={darkMode ? "hover:bg-slate-800/50" : "hover:bg-slate-100"}>
                       <td className={`px-4 py-3 font-mono font-semibold ${textStrong}`}>
                         {ev.evidence_uid}
                       </td>
@@ -501,7 +544,7 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
                   </Button>
                   <Button
                     onClick={() => setShowAddModal(false)}
-                    className={`${darkMode ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800" : "border-gray-300 bg-white text-gray-800 hover:bg-gray-100"}`}
+                    className={`${darkMode ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800" : "border-gray-300 bg-slate-50 text-slate-800 hover:bg-slate-200"}`}
                   >
                     Cancel
                   </Button>
@@ -527,14 +570,27 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
               <div className="space-y-4">
                 <div>
                   <label className={`block text-sm font-medium mb-1 ${textStrong}`}>
-                    Case ID *
+                    Case ID * <span className={`text-xs font-normal ${textWeak}`}>(max 24 chars, uppercase, no spaces)</span>
                   </label>
                   <Input
                     value={newCase.case_id}
-                    onChange={(e) => setNewCase({ ...newCase, case_id: e.target.value })}
-                    placeholder="e.g., INC-2025-001, APT_Investigation"
-                    className={inputBg}
+                    onChange={(e) => {
+                      // Transform to uppercase, remove spaces, limit to 24 characters
+                      const sanitized = e.target.value
+                        .toUpperCase()
+                        .replace(/\s+/g, '')
+                        .slice(0, 24);
+                      setNewCase({ ...newCase, case_id: sanitized });
+                    }}
+                    placeholder="e.g., INC-2025-001"
+                    maxLength={24}
+                    className={`${darkMode ? "bg-slate-800 border-slate-600 text-slate-100 placeholder:text-slate-500" : "bg-white border-gray-300 text-gray-900 placeholder:text-gray-400"} rounded-lg`}
                   />
+                  {newCase.case_id && (
+                    <p className={`text-xs mt-1 ${textWeak}`}>
+                      {newCase.case_id.length}/24 characters
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -546,7 +602,7 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
                     onChange={(e) => setNewCase({ ...newCase, note: e.target.value })}
                     placeholder="Brief description of the investigation"
                     rows={3}
-                    className={`w-full px-3 py-2 rounded-lg border resize-none ${inputBg}`}
+                    className={`w-full px-3 py-2 rounded-lg border resize-none ${darkMode ? "bg-slate-800 border-slate-600 text-slate-100 placeholder:text-slate-500" : "bg-white border-gray-300 text-gray-900 placeholder:text-gray-400"}`}
                   />
                 </div>
 
@@ -559,7 +615,7 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
                   </Button>
                   <Button
                     onClick={() => setShowAddCaseModal(false)}
-                    className={`${darkMode ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800" : "border-gray-300 bg-white text-gray-800 hover:bg-gray-100"}`}
+                    className={`${darkMode ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800" : "border-gray-300 bg-slate-50 text-slate-800 hover:bg-slate-200"}`}
                   >
                     Cancel
                   </Button>

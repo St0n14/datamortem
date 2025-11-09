@@ -29,17 +29,22 @@ export interface TaskRun {
   id: number;
   task_name: string;
   evidence_uid: string;
-  case_id: string;
   status: 'queued' | 'running' | 'success' | 'error';
-  celery_task_id: string | null;
-  output_path: string | null;
-  error_message: string | null;
-  module_id: number | null;
+  celery_task_id?: string | null;
+  output_path?: string | null;
+  error_message?: string | null;
+  module_id?: number | null;
+  script_id?: number | null;
+  script_name?: string | null;
   module?: AnalysisModule;
-  created_at: string;
-  updated_at: string;
+  started_at_utc?: string | null;
+  ended_at_utc?: string | null;
+  progress_message?: string | null;
+  created_at?: string;
+  updated_at?: string;
   indexed_at?: string | null;
-  indexed: boolean;
+  indexed?: boolean;
+  case_id?: string;
 }
 
 export interface IndexTaskRunRequest {
@@ -96,4 +101,43 @@ export interface IndexStats {
   document_count: number;
   size_in_bytes: number;
   health: string;
+}
+
+export interface CaseIndexSummary {
+  case_id: string;
+  total_task_runs: number;
+  indexed_count: number;
+  not_indexed_count: number;
+}
+
+export interface Script {
+  id: number;
+  name: string;
+  description?: string | null;
+  language: string;
+  source_code: string;
+  created_at_utc: string;
+  is_approved: boolean;
+  published_at?: string | null;
+}
+
+export interface ScriptSummary {
+  id: number;
+  name: string;
+  description?: string | null;
+  language: string;
+  is_approved: boolean;
+  published_at?: string | null;
+}
+
+export interface Rule {
+  id: number;
+  name: string;
+  logic: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  tags: string[];
+  scope: string;
+  rule_type: 'yara' | 'custom' | 'network' | 'hayabusa' | 'sigma';
+  applies_to: string;
+  created_at: string;
 }

@@ -17,7 +17,7 @@ export const BrandMark = ({
     <div className={`flex items-center gap-3 ${className}`}>
       <div
         className={`flex h-11 w-11 items-center justify-center rounded-2xl border ${
-          isLight ? "border-white/40 bg-white/10 text-white" : "border-violet-500/30 bg-slate-900 text-violet-200"
+          isLight ? "border-white/40 bg-slate-50/10 text-white" : "border-violet-500/30 bg-slate-900 text-violet-200"
         }`}
       >
         <ShieldCheck className="h-5 w-5" />

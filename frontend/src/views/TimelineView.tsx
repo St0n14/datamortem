@@ -134,7 +134,7 @@ export default function TimelineView() {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-8 py-6">
+      <div className="bg-slate-50 border-b border-gray-200 px-8 py-6">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
@@ -206,7 +206,7 @@ export default function TimelineView() {
                     {/* Group header */}
                     <button
                       onClick={() => toggleGroup(timeKey)}
-                      className="w-full flex items-center justify-between hover:bg-gray-50 -m-6 p-6 rounded-t-lg transition-colors"
+                      className="w-full flex items-center justify-between hover:bg-slate-100 -m-6 p-6 rounded-t-lg transition-colors"
                     >
                       <div className="flex items-center gap-4">
                         <div className="w-12 h-12 bg-timesketch-lightblue rounded-lg flex items-center justify-center text-white font-bold">
@@ -220,7 +220,7 @@ export default function TimelineView() {
                             {eventTypes.map((type) => (
                               <span
                                 key={type}
-                                className="text-xs px-2 py-0.5 rounded font-medium bg-gray-100 text-gray-700"
+                                className="text-xs px-2 py-0.5 rounded font-medium bg-gray-100 text-slate-700"
                               >
                                 {getEventTypeIcon(type)} {type}
                               </span>

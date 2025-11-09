@@ -10,9 +10,12 @@ import type {
   AggregateRequest,
   TimelineRequest,
   IndexStats,
+  Script,
+  ScriptSummary,
+  Rule,
 } from '../types';
 
-const API_BASE_URL = 'http://localhost:8000/api';
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) || 'http://localhost:8080/api';
 
 /**
  * Get the authentication token from localStorage
@@ -44,10 +47,15 @@ async function fetchAPI<T>(
   });
 
   // If unauthorized, clear token and reload (will redirect to login)
-  if (response.status === 401 || response.status === 403) {
+  if (response.status === 401) {
     localStorage.removeItem('auth_token');
     window.location.reload();
     throw new Error('Authentication required');
+  }
+
+  if (response.status === 403) {
+    const errorBody = await response.json().catch(() => ({ detail: 'Forbidden' }));
+    throw new Error(errorBody.detail || 'Forbidden');
   }
 
   if (!response.ok) {
@@ -134,7 +142,7 @@ export const pipelineAPI = {
   },
 
   run: (data: { module_id: number; evidence_uid: string }) =>
-    fetchAPI<TaskRun>('/pipeline/run', {
+    fetchAPI<{ task_run_id: number; status: string }>('/pipeline/run', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
@@ -193,4 +201,94 @@ export const searchAPI = {
 
   health: () =>
     fetchAPI<{ status: string; cluster: string }>('/search/health'),
+};
+
+// Scripts API
+export const scriptsAPI = {
+  list: () => fetchAPI<Script[]>('/scripts'),
+
+  create: (data: { name: string; description?: string; language: 'python' | 'perl' | 'rust'; source_code: string }) =>
+    fetchAPI<Script>('/scripts', {
+      method: 'POST',
+      body: JSON.stringify({
+        ...data,
+      }),
+    }),
+
+  get: (scriptId: number) => fetchAPI<Script>(`/scripts/${scriptId}`),
+
+  run: (scriptId: number, payload: { evidence_uid: string }) =>
+    fetchAPI<{ task_run_id: number; status: string; evidence_uid: string; script_id: number | null; celery_task_id?: string | null }>(
+      `/scripts/${scriptId}/run`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      },
+    ),
+
+  marketplace: () => fetchAPI<ScriptSummary[]>('/scripts/marketplace'),
+
+  approve: (scriptId: number, approved = true) =>
+    fetchAPI<{ id: number; is_approved: boolean }>(`/scripts/${scriptId}/approve?approved=${approved}`, {
+      method: 'POST',
+    }),
+
+  assign: (scriptId: number, userId: number) =>
+    fetchAPI<{ status: string; user_id: number; script_id: number }>(`/scripts/${scriptId}/assign`, {
+      method: 'POST',
+      body: JSON.stringify({ user_id: userId }),
+    }),
+
+  importFromGitHub: (data: { repo_url: string; branch?: string; scripts_path?: string }) =>
+    fetchAPI<{ status: string; imported: number; skipped: number; errors?: string[] | null }>('/scripts/import-github', {
+      method: 'POST',
+      body: JSON.stringify({
+        repo_url: data.repo_url,
+        branch: data.branch || 'main',
+        scripts_path: data.scripts_path || 'scripts',
+      }),
+    }),
+
+  install: (scriptId: number) =>
+    fetchAPI<{ status: string; script_id: number }>(`/scripts/${scriptId}/install`, {
+      method: 'POST',
+    }),
+
+  myScripts: () => fetchAPI<Script[]>('/scripts/my-scripts'),
+};
+
+// Rules API
+export const rulesAPI = {
+  list: () => fetchAPI<Rule[]>('/rules'),
+  create: (data: {
+    name: string;
+    logic: string;
+    severity: Rule['severity'];
+    tags: string[];
+    scope: string;
+    rule_type: Rule['rule_type'];
+    applies_to: string;
+  }) =>
+    fetchAPI<Rule>('/rules', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+};
+
+// Health/Status API
+export interface ServiceStatus {
+  status: 'healthy' | 'unhealthy' | 'degraded';
+  message: string;
+}
+
+export interface SystemStatus {
+  api: ServiceStatus;
+  postgres: ServiceStatus;
+  redis: ServiceStatus;
+  celery: ServiceStatus;
+  opensearch: ServiceStatus;
+}
+
+export const healthAPI = {
+  getStatus: () => fetchAPI<SystemStatus>('/health/status'),
 };

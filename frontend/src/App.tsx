@@ -5,26 +5,34 @@ import { Header } from "./components/Header";
 import { PipelineView } from "./components/PipelineView";
 import { EvidencesView } from "./views/EvidencesView";
 import { ExplorerView } from "./views/ExplorerView";
-import { casesAPI, searchAPI } from "./services/api";
+import { ScriptsView } from "./views/ScriptsView";
+import { MarketplaceView } from "./views/MarketplaceView";
+import { RulesView } from "./views/RulesView";
+import { BrandMark } from "./components/BrandMark";
+import { casesAPI, searchAPI, indexingAPI } from "./services/api";
+import type { CaseIndexSummary } from "./types";
 import {
-  Skull,
-  Sun,
-  Moon,
   Search,
   Filter,
   Clock,
-  Activity,
   ShieldCheck,
   Wrench,
   HardDrive,
   X,
   RefreshCw,
+  FileCode2,
+  Store,
+  ChevronDown,
+  ChevronUp,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 
 import { Card, CardContent } from "./components/ui/Card";
 import { Button } from "./components/ui/Button";
 import { Input } from "./components/ui/Input";
 import { Badge } from "./components/ui/Badge";
+import { TimelineChart } from "./components/TimelineChart";
 
 type EventRow = {
   id: number;
@@ -52,8 +60,9 @@ type TimelineBucket = {
 // Main authenticated app component
 function AuthenticatedApp() {
   const [darkMode, setDarkMode] = useState(true);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeTab, setActiveTab] =
-    useState<"timeline" | "pipeline" | "rules" | "evidences" | "explorer">("timeline");
+    useState<"timeline" | "pipeline" | "rules" | "evidences" | "explorer" | "scripts" | "marketplace">("timeline");
 
   // Load current case from localStorage or use default
   const [currentCaseId, setCurrentCaseId] = useState<string>(() => {
@@ -71,10 +80,10 @@ function AuthenticatedApp() {
   const [timelineInterval, setTimelineInterval] = useState("1h");
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [timelineError, setTimelineError] = useState<string | null>(null);
-  const maxTimelineCount = useMemo(
-    () => (timelineBuckets.length ? Math.max(...timelineBuckets.map((b) => b.count)) : 0),
-    [timelineBuckets]
-  );
+  const [timelineDetailsExpanded, setTimelineDetailsExpanded] = useState(false);
+  const [caseSummary, setCaseSummary] = useState<CaseIndexSummary | null>(null);
+  const [caseSummaryLoading, setCaseSummaryLoading] = useState(false);
+  const [caseSummaryError, setCaseSummaryError] = useState<string | null>(null);
   const timelineTotal = useMemo(
     () => timelineBuckets.reduce((acc, bucket) => acc + bucket.count, 0),
     [timelineBuckets]
@@ -111,6 +120,30 @@ function AuthenticatedApp() {
   useEffect(() => {
     loadCases();
   }, [casesRefreshToken]);
+
+  useEffect(() => {
+    if (!currentCaseId) {
+      setCaseSummary(null);
+      return;
+    }
+    setCaseSummaryLoading(true);
+    setCaseSummaryError(null);
+    indexingAPI
+      .getCaseSummary(currentCaseId)
+      .then((summary) => setCaseSummary(summary))
+      .catch((err) => {
+        // 404 is expected when the case hasn't been indexed yet - don't show error
+        if (err.message && (err.message.includes('404') || err.message.includes('Not Found'))) {
+          console.log("Case not indexed yet:", currentCaseId);
+          setCaseSummary(null);
+        } else {
+          console.error("Failed to fetch indexing summary", err);
+          setCaseSummaryError("Impossible de récupérer le statut d'indexation.");
+          setCaseSummary(null);
+        }
+      })
+      .finally(() => setCaseSummaryLoading(false));
+  }, [currentCaseId]);
 
   const loadEventsFromOpenSearch = async () => {
     if (!currentCaseId) {
@@ -163,10 +196,16 @@ function AuthenticatedApp() {
         query,
       });
       setTimelineBuckets(data.buckets || data.timeline || []);
-    } catch (err) {
-      console.error("failed to load timeline", err);
-      setTimelineError("Impossible de charger la timeline (OpenSearch ?).");
-      setTimelineBuckets([]);
+    } catch (err: any) {
+      // 404 is expected when the case hasn't been indexed yet - don't show error
+      if (err.message && (err.message.includes('404') || err.message.includes('Not Found'))) {
+        console.log("No timeline data for case:", currentCaseId);
+        setTimelineBuckets([]);
+      } else {
+        console.error("failed to load timeline", err);
+        setTimelineError("Impossible de charger la timeline (OpenSearch ?).");
+        setTimelineBuckets([]);
+      }
     } finally {
       setTimelineLoading(false);
     }
@@ -228,7 +267,7 @@ function AuthenticatedApp() {
         lateral_movement: "bg-violet-100 text-violet-700 border border-violet-300",
         psexec: "bg-sky-100 text-sky-700 border border-sky-300",
         credential_use: "bg-emerald-100 text-emerald-700 border border-emerald-300",
-        default: "bg-gray-100 text-gray-700 border border-gray-300",
+        default: "bg-gray-100 text-slate-700 border border-slate-300",
       };
       return map[tag] || map.default;
     }
@@ -247,207 +286,246 @@ function AuthenticatedApp() {
     });
   };
 
-  const bgApp = darkMode ? "bg-slate-950 text-slate-50" : "bg-gray-50 text-gray-900";
-  const textWeak = darkMode ? "text-slate-500" : "text-gray-500";
-  const textStrong = darkMode ? "text-slate-100" : "text-gray-900";
+  const bgApp = darkMode ? "bg-slate-950 text-slate-50" : "bg-slate-50 text-slate-900";
+  const textWeak = darkMode ? "text-slate-500" : "text-slate-600";
+  const textStrong = darkMode ? "text-slate-100" : "text-slate-900";
   const iconButtonClass = darkMode
     ? "h-8 w-8 p-0 border border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700"
-    : "h-8 w-8 p-0 border border-gray-300 bg-white text-gray-800 hover:bg-gray-100";
+    : "h-8 w-8 p-0 border border-slate-300 bg-slate-100 text-slate-800 hover:bg-slate-200";
+  const navItems = [
+    { key: "timeline" as const, label: "Timeline", icon: <Clock className="h-4 w-4" /> },
+    { key: "explorer" as const, label: "Explorer", icon: <Search className="h-4 w-4" /> },
+    { key: "evidences" as const, label: "Evidences", icon: <HardDrive className="h-4 w-4" /> },
+    { key: "pipeline" as const, label: "Pipeline", icon: <Wrench className="h-4 w-4" /> },
+    { key: "marketplace" as const, label: "Marketplace", icon: <Store className="h-4 w-4" /> },
+    { key: "scripts" as const, label: "Scripts", icon: <FileCode2 className="h-4 w-4" /> },
+    { key: "rules" as const, label: "Rules", icon: <ShieldCheck className="h-4 w-4" /> },
+  ];
 
   return (
     <div className={`flex h-screen w-full font-sans ${bgApp}`}>
+      <aside
+        className={`relative flex flex-col gap-4 border-r px-3 py-4 transition-all duration-300 ${
+          sidebarCollapsed ? "w-16" : "w-56"
+        } ${darkMode ? "border-slate-900 bg-slate-950/90" : "border-gray-200 bg-slate-50"}`}
+      >
+        {/* Toggle button */}
+        <button
+          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+          className={`absolute -right-3 top-6 z-10 rounded-full border p-1 transition-colors ${
+            darkMode
+              ? "border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700"
+              : "border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-200"
+          }`}
+          aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {sidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+        </button>
 
-      {/* MAIN */}
-      <main className={`flex flex-1 min-w-0 min-h-0 p-4 gap-4 overflow-auto ${darkMode ? "bg-slate-950" : "bg-gray-50"}`}>
-        {/* COLONNE CENTRALE */}
-        <section className="flex flex-col flex-[2] min-w-0 min-h-0 gap-4">
-          <header
-            className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border px-3 py-2 ${
-              darkMode
-                ? "border-slate-800 bg-slate-950/80 text-slate-100"
-                : "border-gray-200 bg-white text-gray-900"
+        <div className={`space-y-3 ${sidebarCollapsed ? "hidden" : ""}`}>
+          <BrandMark subtitle="Investigation Console" />
+          <Badge
+            className={`text-[10px] border ${
+              darkMode ? "bg-emerald-500/10 text-emerald-200 border-emerald-500/30" : "bg-emerald-50 text-emerald-700 border-emerald-200"
             }`}
           >
-            <div className="flex items-center gap-3 min-w-0">
-              <div
-                className={`flex items-center justify-center h-10 w-10 rounded-xl border ${
-                  darkMode ? "bg-slate-900 border-slate-800 text-violet-200" : "bg-violet-50 border-violet-200 text-violet-700"
-                }`}
-              >
-                <Skull className="h-4 w-4" />
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold tracking-tight">dataMortem</span>
-                  <Badge
-                    className={`text-[10px] border ${
-                      darkMode ? "bg-emerald-500/10 text-emerald-200 border-emerald-500/30" : "bg-emerald-50 text-emerald-700 border-emerald-200"
-                    }`}
-                  >
-                    LIVE
-                  </Badge>
-                </div>
-                <div className="flex flex-wrap items-center gap-2 pt-1">
-                  <span className={`text-[10px] uppercase tracking-wide ${darkMode ? "text-slate-500" : "text-gray-500"}`}>Case</span>
-                  <select
-                    value={cases.length ? currentCaseId : ""}
-                    onChange={(e) => handleCaseSelect(e.target.value)}
-                    disabled={!cases.length}
-                    className={`rounded-lg border px-2 py-1 text-xs ${
-                      darkMode ? "border-slate-800 bg-slate-900 text-slate-100" : "border-gray-300 bg-white text-gray-900"
-                    }`}
-                  >
-                    {cases.length === 0 ? (
-                      <option value="">No cases</option>
-                    ) : (
-                      cases.map((c) => (
-                        <option key={c.case_id} value={c.case_id}>
-                          {c.case_id} {c.status ? `• ${c.status}` : ""}
-                        </option>
-                      ))
-                    )}
-                  </select>
-                  <span className={`text-[11px] ${darkMode ? "text-slate-500" : "text-gray-500"}`}>
-                    Evidence {selectedEvidenceUid ?? "—"}
-                  </span>
-                </div>
-              </div>
-            </div>
+            LIVE
+          </Badge>
+        </div>
 
-            <div className="flex flex-wrap items-center gap-2 text-[11px]">
-              <div
-                className={`flex items-center gap-1 rounded-lg border px-2 py-1 ${
-                  darkMode ? "border-slate-800 bg-slate-900" : "border-gray-200 bg-gray-50"
-                }`}
-              >
-                <span className={`text-[10px] uppercase tracking-wide ${darkMode ? "text-slate-500" : "text-gray-500"}`}>Events</span>
-                <span className="text-xs font-semibold">{events.length}</span>
-              </div>
-              <div
-                className={`flex items-center gap-1 rounded-lg border px-2 py-1 ${
-                  darkMode ? "border-slate-800 bg-slate-900" : "border-gray-200 bg-gray-50"
-                }`}
-              >
-                <span className={`text-[10px] uppercase tracking-wide ${darkMode ? "text-slate-500" : "text-gray-500"}`}>Focus</span>
-                <span className="text-xs font-semibold capitalize">{activeTab}</span>
-              </div>
+        <div className={`space-y-2 ${sidebarCollapsed ? "hidden" : ""}`}>
+          <p className={`text-xs font-semibold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-gray-600"}`}>
+            Current Case
+          </p>
+          <select
+            value={cases.length ? currentCaseId : ""}
+            onChange={(e) => handleCaseSelect(e.target.value)}
+            disabled={!cases.length}
+            className={`w-full rounded-lg border px-2 py-1.5 text-sm ${
+              darkMode ? "border-slate-800 bg-slate-900 text-slate-100" : "border-gray-300 bg-slate-50 text-gray-900"
+            }`}
+          >
+            {cases.length === 0 ? (
+              <option value="">No cases</option>
+            ) : (
+              cases.map((c) => (
+                <option key={c.case_id} value={c.case_id}>
+                  {c.case_id} {c.status ? `• ${c.status}` : ""}
+                </option>
+              ))
+            )}
+          </select>
+          <Button
+            className={`h-8 w-full text-xs ${
+              darkMode ? "border-slate-800 bg-slate-900 text-slate-200" : "border-gray-200 bg-gray-50 text-slate-800"
+            }`}
+            onClick={() => setActiveTab("evidences")}
+          >
+            Manage cases
+          </Button>
+          <p className={`text-[11px] ${darkMode ? "text-slate-500" : "text-gray-500"}`}>
+            Evidence focus: <span className="font-semibold">{selectedEvidenceUid ?? "—"}</span>
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <p className={`text-xs font-semibold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-gray-600"} ${sidebarCollapsed ? "hidden" : ""}`}>
+            Navigation
+          </p>
+          <div className="flex flex-col gap-1">
+            {navItems.map((item) => {
+              const active = activeTab === item.key;
+              return (
+                <button
+                  key={item.key}
+                  onClick={() => setActiveTab(item.key)}
+                  className={`flex items-center ${sidebarCollapsed ? "justify-center" : "gap-2"} rounded-lg border px-2.5 py-1.5 text-xs font-medium transition ${
+                    active
+                      ? darkMode
+                        ? "border-violet-500/40 bg-violet-900/30 text-violet-100"
+                        : "border-violet-300 bg-violet-50 text-violet-800"
+                      : darkMode
+                      ? "border-slate-900 bg-slate-900/40 text-slate-300 hover:bg-slate-900/70"
+                      : "border-gray-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
+                  }`}
+                  title={sidebarCollapsed ? item.label : undefined}
+                >
+                  {item.icon}
+                  {!sidebarCollapsed && <span className="truncate">{item.label}</span>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className={`mt-auto space-y-1 rounded-xl border px-3 py-3 text-xs ${sidebarCollapsed ? "hidden" : ""}`}>
+          <p className={textWeak}>Events loaded: {events.length}</p>
+          <p className={textWeak}>Active tab: {activeTab}</p>
+        </div>
+      </aside>
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <Header darkMode={darkMode} onToggleTheme={() => setDarkMode((prev) => !prev)} />
+        <main className={`flex flex-1 min-w-0 flex-col gap-4 overflow-auto p-4 ${darkMode ? "bg-slate-950" : "bg-slate-100"}`}>
+          {(!cases.length || !currentCaseId) && activeTab !== "evidences" ? (
+            <div
+              className={`flex flex-1 flex-col items-center justify-center rounded-2xl border p-8 text-center ${
+                darkMode ? "border-slate-800 bg-slate-900" : "border-gray-200 bg-white"
+              }`}
+            >
+              <h2 className={`mb-2 text-lg font-semibold ${textStrong}`}>Aucun case disponible</h2>
+              <p className={`mb-4 max-w-md text-sm ${textWeak}`}>
+                Crée un case et associe des evidences depuis l'onglet <strong>Evidences</strong> pour lancer l'indexation et les pipelines.
+              </p>
               <Button
-                className={`h-7 px-3 text-[11px] ${
-                  darkMode ? "border-slate-700 bg-slate-900 text-slate-200" : "border-gray-300 bg-white text-gray-800"
+                className={`px-4 py-2 text-sm ${
+                  darkMode ? "border-violet-600/40 bg-violet-900/40 text-violet-100" : "border-violet-200 bg-violet-50 text-violet-700"
                 }`}
                 onClick={() => setActiveTab("evidences")}
               >
-                Manage cases
+                Aller vers Evidences
               </Button>
             </div>
-
-            <div className="flex items-center gap-1.5">
-              <Button
-                className={iconButtonClass}
-                onClick={() => setDarkMode(!darkMode)}
-                aria-label="Basculer le thème global"
-              >
-                {darkMode ? <Sun className="h-4 w-4 text-yellow-400" /> : <Moon className="h-4 w-4 text-indigo-600" />}
-              </Button>
-            </div>
-            <div className="flex w-full flex-wrap items-center gap-2 text-[11px] font-medium">
-              {[
-                { key: "timeline" as const, label: "Timeline", icon: <Clock className="h-3.5 w-3.5" /> },
-                { key: "explorer" as const, label: "Explorer", icon: <Search className="h-3.5 w-3.5" /> },
-                { key: "evidences" as const, label: "Evidences", icon: <HardDrive className="h-3.5 w-3.5" /> },
-                { key: "pipeline" as const, label: "Pipeline", icon: <WrenchIcon size={14} /> },
-                { key: "rules" as const, label: "Rules", icon: <ShieldCheck className="h-3.5 w-3.5" /> },
-              ].map((item) => {
-                const active = activeTab === item.key;
-                return (
-                  <Button
-                    key={item.key}
-                    className={`px-3 py-1.5 h-auto text-xs ${
-                      active
-                        ? darkMode
-                          ? "border-violet-600/30 bg-violet-950/40 text-violet-200"
-                          : "border-violet-300 bg-violet-50 text-violet-700"
-                        : darkMode
-                        ? "border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-800"
-                        : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
-                    }`}
-                    onClick={() => setActiveTab(item.key)}
-                  >
-                    <span className="flex items-center gap-2">
-                      {item.icon}
-                      {item.label}
-                    </span>
-                  </Button>
-                );
-              })}
-              <div
-                className={`ml-auto flex items-center gap-2 rounded-lg border px-3 py-1 ${
-                  darkMode ? "border-slate-800 bg-slate-900 text-slate-300" : "border-gray-200 bg-gray-50 text-gray-700"
-                }`}
-              >
-                <Activity className="h-3.5 w-3.5 text-rose-500" />
-                <span className="text-[10px] uppercase tracking-wide">Highlights ready</span>
-              </div>
-            </div>
-          </header>
-
-          {/* Barre de requête */}
-          {activeTab === "timeline" && (
+          ) : (
             <>
-              <div className="flex flex-col md:flex-row gap-3 items-start md:items-center justify-between">
-                <div className="flex flex-col gap-1 min-w-0 w-full">
-                  <div className={`text-xs font-semibold flex items-center gap-2 ${darkMode ? "text-slate-100" : "text-gray-900"}`}>
-                    <span>OpenSearch Query</span>
-                    <Badge
-                      className={`rounded-md border text-[11px] ${
-                        darkMode ? "bg-violet-950/40 text-violet-200 border-violet-600/30" : "bg-violet-50 text-violet-700 border-violet-300"
-                      }`}
-                    >
-                      {currentCaseId}
-                    </Badge>
+              <section className="flex flex-col flex-[2] min-w-0 min-h-0 gap-4">
+                <div
+                  className={`rounded-2xl border px-4 py-3 ${
+                    darkMode ? "border-slate-800 bg-slate-900/60" : "border-gray-200 bg-white"
+                  }`}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                      <p className={`text-sm font-semibold ${textStrong}`}>Statut d’indexation</p>
+                      <p className={`text-xs ${textWeak}`}>Case {currentCaseId}</p>
+                    </div>
+                    <div className="text-right text-xs">
+                      {caseSummaryLoading && <span className={textWeak}>Chargement…</span>}
+                      {caseSummaryError && <span className="text-rose-400">{caseSummaryError}</span>}
+                    </div>
                   </div>
-
-                  <div className="flex items-center gap-2 w-full">
-                    <div className="relative flex-1">
-                      <Search className={`absolute left-2 top-2.5 h-4 w-4 ${darkMode ? "text-slate-500" : "text-gray-400"}`} />
-                      <Input
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                        onKeyPress={(e) => e.key === 'Enter' && handleSearchSubmit()}
-                        className="pl-8 pr-28"
-                      />
-                      <div
-                        className={`absolute right-2 top-1.5 text-[10px] font-mono rounded-md px-1.5 py-0.5 border ${
-                          darkMode ? "text-slate-400 bg-slate-900 border-slate-700" : "text-gray-500 bg-white border-gray-300"
-                        }`}
-                      >
-                        ⏎ Run
+                  {caseSummary ? (
+                    <div className="mt-3 grid gap-3 text-center sm:grid-cols-3">
+                      <div className="rounded-lg border px-3 py-2">
+                        <p className={`text-2xl font-semibold ${textStrong}`}>{caseSummary.total_task_runs}</p>
+                        <p className={`text-[11px] uppercase tracking-wide ${textWeak}`}>Task Runs</p>
+                      </div>
+                      <div className="rounded-lg border px-3 py-2">
+                        <p className="text-2xl font-semibold text-emerald-400">{caseSummary.indexed_count}</p>
+                        <p className={`text-[11px] uppercase tracking-wide ${textWeak}`}>Indexés</p>
+                      </div>
+                      <div className="rounded-lg border px-3 py-2">
+                        <p className="text-2xl font-semibold text-amber-400">{caseSummary.not_indexed_count}</p>
+                        <p className={`text-[11px] uppercase tracking-wide ${textWeak}`}>En attente</p>
                       </div>
                     </div>
-                    <Button
-                      onClick={handleSearchSubmit}
-                      className={`h-9 rounded-xl border text-sm font-medium ${
-                        darkMode ? "border-violet-600/30 bg-violet-950/40 text-violet-200 hover:bg-violet-900/30" : "border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100"
-                      }`}
-                    >
-                      <Search className="h-4 w-4 mr-2" />
-                      Search
-                    </Button>
-                  </div>
+                  ) : (
+                    !caseSummaryLoading &&
+                    !caseSummaryError && <p className={`mt-2 text-sm ${textWeak}`}>Aucune donnée d’indexation disponible.</p>
+                  )}
                 </div>
 
-                <div className="flex items-center gap-2 w-full md:w-auto">
+                {activeTab === "timeline" && (
+            <>
+              <div className="flex flex-col gap-3">
+                {/* Label avec badge du case */}
+                <div className={`text-xs font-semibold flex items-center gap-2 ${darkMode ? "text-slate-100" : "text-slate-900"}`}>
+                  <span>OpenSearch Query</span>
+                  <Badge
+                    className={`rounded-md border text-[11px] ${
+                      darkMode ? "bg-violet-950/40 text-violet-200 border-violet-600/30" : "bg-violet-50 text-violet-700 border-violet-300"
+                    }`}
+                  >
+                    {currentCaseId}
+                  </Badge>
+                </div>
+
+                {/* Barre de recherche avec tous les boutons alignés */}
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Champ de recherche */}
+                  <div className="relative flex-1 min-w-[280px]">
+                    <Search className={`absolute left-3 top-2.5 h-4 w-4 ${darkMode ? "text-slate-500" : "text-gray-400"}`} />
+                    <Input
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && handleSearchSubmit()}
+                      className="pl-9 pr-20 h-9"
+                      placeholder="Enter query..."
+                    />
+                    <div
+                      className={`absolute right-2 top-2 text-[10px] font-mono rounded-md px-1.5 py-0.5 border ${
+                        darkMode ? "text-slate-400 bg-slate-900 border-slate-700" : "text-slate-600 bg-slate-50 border-slate-300"
+                      }`}
+                    >
+                      ⏎ Run
+                    </div>
+                  </div>
+
+                  {/* Bouton Search */}
                   <Button
-                    className={`h-9 rounded-xl border text-sm font-medium ${
+                    onClick={handleSearchSubmit}
+                    className={`h-9 px-4 rounded-lg border text-sm font-medium whitespace-nowrap ${
+                      darkMode ? "border-violet-600/30 bg-violet-950/40 text-violet-200 hover:bg-violet-900/30" : "border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100"
+                    }`}
+                  >
+                    <Search className="h-4 w-4 mr-2" />
+                    Search
+                  </Button>
+
+                  {/* Bouton Filters */}
+                  <Button
+                    className={`h-9 px-4 rounded-lg border text-sm font-medium whitespace-nowrap ${
                       darkMode ? "border-sky-600/30 bg-sky-900/20 text-sky-200 hover:bg-sky-900/30" : "border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100"
                     }`}
                   >
                     <Filter className="h-4 w-4 mr-2" />
                     Filters
                   </Button>
+
+                  {/* Bouton Export CSV */}
                   <Button
-                    className={`h-9 rounded-xl border px-3 text-[12px] font-medium ${
-                      darkMode ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800" : "border-gray-300 bg-white text-gray-800 hover:bg-gray-100"
+                    className={`h-9 px-4 rounded-lg border text-sm font-medium whitespace-nowrap ${
+                      darkMode ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800" : "border-slate-300 bg-slate-50 text-slate-800 hover:bg-slate-200"
                     }`}
                   >
                     Export CSV
@@ -455,12 +533,12 @@ function AuthenticatedApp() {
                 </div>
               </div>
 
-              <Card className={`flex-1 min-w-0 ${darkMode ? "border-slate-700 bg-slate-900" : "border-gray-200 bg-white"}`}>
+              <Card className={`flex-1 min-w-0 ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-slate-50"}`}>
                 <CardContent className="p-4 space-y-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <p className={`text-sm font-semibold ${darkMode ? "text-slate-100" : "text-gray-900"}`}>Timeline</p>
-                      <p className={`text-xs ${darkMode ? "text-slate-400" : "text-gray-500"}`}>
+                      <p className={`text-sm font-semibold ${darkMode ? "text-slate-100" : "text-slate-900"}`}>Timeline</p>
+                      <p className={`text-xs ${darkMode ? "text-slate-400" : "text-slate-600"}`}>
                         {timelineTotal ? `${timelineTotal.toLocaleString()} events agrégés` : "En attente de données"}
                       </p>
                     </div>
@@ -469,7 +547,7 @@ function AuthenticatedApp() {
                         value={timelineInterval}
                         onChange={(e) => setTimelineInterval(e.target.value)}
                         className={`rounded-lg border px-2 py-1 text-sm ${
-                          darkMode ? "border-slate-700 bg-slate-900 text-slate-100" : "border-gray-300 bg-white text-gray-900"
+                          darkMode ? "border-slate-700 bg-slate-900 text-slate-100" : "border-slate-300 bg-slate-50 text-slate-900"
                         }`}
                       >
                         {["1m", "5m", "15m", "1h", "6h", "1d"].map((interval) => (
@@ -484,7 +562,7 @@ function AuthenticatedApp() {
                         className={`h-9 whitespace-nowrap px-3 text-xs font-semibold ${
                           darkMode
                             ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800 disabled:border-slate-800 disabled:text-slate-500"
-                            : "border-gray-300 bg-white text-gray-800 hover:bg-gray-50 disabled:text-gray-400"
+                            : "border-slate-300 bg-slate-50 text-slate-800 hover:bg-slate-100 disabled:text-gray-400"
                         }`}
                       >
                         <RefreshCw className="mr-1.5 h-4 w-4" />
@@ -501,71 +579,72 @@ function AuthenticatedApp() {
                       {timelineError}
                     </div>
                   )}
-                  <div className="flex flex-col gap-4">
-                    {timelineLoading ? (
-                      <p className={`text-sm ${darkMode ? "text-slate-400" : "text-gray-500"}`}>Chargement de la timeline…</p>
-                    ) : timelineBuckets.length === 0 ? (
-                      <p className={`text-sm ${darkMode ? "text-slate-400" : "text-gray-500"}`}>Aucune donnée pour cette requête.</p>
-                    ) : (
-                      <>
-                        <div className="overflow-x-auto pb-2">
-                          <div className="flex items-end gap-2 min-h-[200px]">
-                            {timelineBuckets.map((bucket) => {
-                              const heightPercent = maxTimelineCount
-                                ? Math.max((bucket.count / maxTimelineCount) * 100, 6)
-                                : 0;
-                              return (
-                                <div key={`timeline-bar-${bucket.timestamp}`} className="flex flex-col items-center gap-1 min-w-[38px]">
-                                  <div
-                                    className={`w-4 sm:w-5 rounded-t ${darkMode ? "bg-violet-500/80" : "bg-violet-600/80"}`}
-                                    style={{ height: `${heightPercent}%` }}
-                                    title={`${bucket.timestamp} — ${bucket.count}`}
-                                  />
-                                  <span className={`text-[10px] text-center leading-tight ${darkMode ? "text-slate-500" : "text-gray-500"}`}>
-                                    {formatTimelineLabel(bucket.timestamp)}
-                                  </span>
-                                  <span className={`text-[11px] font-semibold ${darkMode ? "text-slate-100" : "text-gray-900"}`}>
-                                    {bucket.count}
-                                  </span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                        <div className="max-h-32 overflow-auto space-y-1 text-xs font-mono">
+                  {timelineLoading ? (
+                    <p className={`text-sm ${darkMode ? "text-slate-400" : "text-slate-600"}`}>Chargement de la timeline…</p>
+                  ) : timelineBuckets.length === 0 ? (
+                    <p className={`text-sm ${darkMode ? "text-slate-400" : "text-slate-600"}`}>Aucune donnée pour cette requête.</p>
+                  ) : (
+                    <div className="flex flex-col gap-4">
+                      <TimelineChart data={timelineBuckets} darkMode={darkMode} />
+
+                      {/* Toggle button for detailed list */}
+                      <button
+                        onClick={() => setTimelineDetailsExpanded(!timelineDetailsExpanded)}
+                        className={`flex items-center justify-between w-full px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                          darkMode
+                            ? "border-slate-700 bg-slate-800/50 text-slate-200 hover:bg-slate-800"
+                            : "border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200"
+                        }`}
+                      >
+                        <span className="flex items-center gap-2">
+                          {timelineDetailsExpanded ? (
+                            <ChevronUp className="h-4 w-4" />
+                          ) : (
+                            <ChevronDown className="h-4 w-4" />
+                          )}
+                          Detailed Timeline Data ({timelineBuckets.length} buckets)
+                        </span>
+                        <span className={`text-xs ${darkMode ? "text-slate-500" : "text-slate-600"}`}>
+                          {timelineDetailsExpanded ? "Click to hide" : "Click to expand"}
+                        </span>
+                      </button>
+
+                      {/* Collapsible detailed list */}
+                      {timelineDetailsExpanded && (
+                        <div className="max-h-64 overflow-auto space-y-1 text-xs font-mono">
                           {timelineBuckets.map((bucket) => (
                             <div
                               key={`timeline-row-${bucket.timestamp}`}
                               className={`flex items-center justify-between rounded border px-2 py-1 ${
-                                darkMode ? "border-slate-800 bg-slate-900/60" : "border-gray-200 bg-gray-50"
+                                darkMode ? "border-slate-800 bg-slate-900/60" : "border-slate-200 bg-slate-100"
                               }`}
                             >
-                              <span className="truncate pr-2">{bucket.timestamp}</span>
+                              <span className="truncate pr-2">{formatTimelineLabel(bucket.timestamp)}</span>
                               <span>{bucket.count}</span>
                             </div>
                           ))}
                         </div>
-                      </>
-                    )}
-                  </div>
+                      )}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 
               {/* Events table */}
-              <Card className={`flex-1 min-w-0 flex flex-col ${darkMode ? "border-slate-700 bg-slate-900" : "border-gray-200 bg-white"}`}>
+              <Card className={`flex-1 min-w-0 flex flex-col ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-slate-50"}`}>
                 <CardContent className="p-0 flex flex-col min-h-0">
                   <div className={`flex items-center justify-between border-b px-4 py-2 text-[11px] ${
-                    darkMode ? "border-slate-700 text-slate-400" : "border-gray-200 text-gray-500"
+                    darkMode ? "border-slate-700 text-slate-400" : "border-slate-200 text-slate-600"
                   }`}>
                     <div className="flex items-center gap-4">
-                      <span className={`font-semibold text-xs ${darkMode ? "text-slate-100" : "text-gray-900"}`}>Events</span>
-                      <span className={darkMode ? "text-slate-500" : "text-gray-500"}>Showing {events.length}</span>
+                      <span className={`font-semibold text-xs ${darkMode ? "text-slate-100" : "text-slate-900"}`}>Events</span>
+                      <span className={darkMode ? "text-slate-500" : "text-slate-600"}>Showing {events.length}</span>
                     </div>
-                    <div className={`flex items-center gap-2 text-[10px] ${darkMode ? "text-slate-500" : "text-gray-500"}`}>
+                    <div className={`flex items-center gap-2 text-[10px] ${darkMode ? "text-slate-500" : "text-slate-600"}`}>
                       <span>Sort:</span>
                       <button
                         className={`rounded-md border px-1.5 py-0.5 ${
-                          darkMode ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800" : "border-gray-300 bg-white text-gray-800 hover:bg-gray-100"
+                          darkMode ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800" : "border-slate-300 bg-slate-50 text-slate-800 hover:bg-slate-200"
                         }`}
                       >
                         -@timestamp
@@ -573,11 +652,11 @@ function AuthenticatedApp() {
                     </div>
                   </div>
 
-                  <div className={`overflow-auto text-[12px] leading-relaxed font-mono ${darkMode ? "text-slate-200" : "text-gray-800"}`}>
+                  <div className={`overflow-auto text-[12px] leading-relaxed font-mono ${darkMode ? "text-slate-200" : "text-slate-800"}`}>
                     <table className="min-w-full text-left">
                       <thead
                         className={`sticky top-0 text-[10px] uppercase tracking-wide border-b ${
-                          darkMode ? "bg-slate-900 text-slate-500 border-slate-700" : "bg-white text-gray-500 border-gray-200"
+                          darkMode ? "bg-slate-900 text-slate-500 border-slate-700" : "bg-slate-50 text-slate-600 border-slate-200"
                         }`}
                       >
                         <tr>
@@ -603,12 +682,12 @@ function AuthenticatedApp() {
                               onClick={() => setSelectedEventId(e.id)}
                             >
                               <td className={`px-4 py-2 align-top text-[10px] ${darkMode ? "text-slate-500" : "text-gray-400"}`}>{e.id}</td>
-                              <td className={`px-4 py-2 align-top text-[11px] ${darkMode ? "text-slate-300" : "text-gray-700"}`}>{e.ts}</td>
-                              <td className={`px-4 py-2 align-top text-[11px] font-semibold ${darkMode ? "text-slate-100" : "text-gray-900"}`}>{e.source}</td>
-                              <td className={`px-4 py-2 align-top text-[11px] max-w-[28rem] truncate ${darkMode ? "text-slate-200" : "text-gray-800"}`}>{e.message}</td>
-                              <td className={`px-4 py-2 align-top text-[11px] ${darkMode ? "text-slate-300" : "text-gray-700"}`}>{e.host}</td>
-                              <td className={`px-4 py-2 align-top text-[11px] ${darkMode ? "text-slate-300" : "text-gray-700"}`}>{e.user}</td>
-                              <td className={`px-4 py-2 align-top text-[11px] ${darkMode ? "text-slate-300" : "text-gray-700"}`}>
+                              <td className={`px-4 py-2 align-top text-[11px] ${darkMode ? "text-slate-300" : "text-slate-700"}`}>{e.ts}</td>
+                              <td className={`px-4 py-2 align-top text-[11px] font-semibold ${darkMode ? "text-slate-100" : "text-slate-900"}`}>{e.source}</td>
+                              <td className={`px-4 py-2 align-top text-[11px] max-w-[28rem] truncate ${darkMode ? "text-slate-200" : "text-slate-800"}`}>{e.message}</td>
+                              <td className={`px-4 py-2 align-top text-[11px] ${darkMode ? "text-slate-300" : "text-slate-700"}`}>{e.host}</td>
+                              <td className={`px-4 py-2 align-top text-[11px] ${darkMode ? "text-slate-300" : "text-slate-700"}`}>{e.user}</td>
+                              <td className={`px-4 py-2 align-top text-[11px] ${darkMode ? "text-slate-300" : "text-slate-700"}`}>
                                 <div className="flex flex-wrap gap-1">
                                   {e.tags.map((t) => (
                                     <Badge key={t} className={`rounded-sm text-[10px] font-normal px-1.5 py-0.5 ${tagClass(t)}`}>
@@ -617,7 +696,7 @@ function AuthenticatedApp() {
                                   ))}
                                 </div>
                               </td>
-                              <td className={`px-4 py-2 align-top text-[11px] ${darkMode ? "text-slate-300" : "text-gray-700"}`}>{e.score}</td>
+                              <td className={`px-4 py-2 align-top text-[11px] ${darkMode ? "text-slate-300" : "text-slate-700"}`}>{e.score}</td>
                             </tr>
                           );
                         })}
@@ -646,19 +725,23 @@ function AuthenticatedApp() {
           )}
 
           {activeTab === "pipeline" && (
-            <Card className={`flex-1 ${darkMode ? "border-slate-700 bg-slate-900" : "border-gray-200 bg-white"}`}>
+            <Card className={`flex-1 ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-slate-50"}`}>
               <CardContent className="p-0">
                 <PipelineView selectedEvidenceUid={selectedEvidenceUid} darkMode={darkMode} />
               </CardContent>
             </Card>
           )}
 
+          {activeTab === "marketplace" && (
+            <MarketplaceView darkMode={darkMode} />
+          )}
+
+          {activeTab === "scripts" && (
+            <ScriptsView darkMode={darkMode} />
+          )}
+
           {activeTab === "rules" && (
-            <Card className={`${darkMode ? "border-slate-700 bg-slate-900" : "border-gray-200 bg-white"}`}>
-              <CardContent className="p-4 text-sm">
-                À venir : éditeur de règles (patterns & détection).
-              </CardContent>
-            </Card>
+            <RulesView darkMode={darkMode} />
           )}
         </section>
 
@@ -666,14 +749,14 @@ function AuthenticatedApp() {
         {selectedEvent ? (
           <aside
             className={`hidden lg:flex flex-col w-[22rem] shrink-0 rounded-xl border text-[12px] leading-relaxed ${
-              darkMode ? "border-slate-700 bg-slate-900 text-slate-200" : "border-gray-200 bg-white text-gray-800"
+              darkMode ? "border-slate-700 bg-slate-900 text-slate-200" : "border-slate-200 bg-slate-50 text-slate-800"
             }`}
           >
             <div className="p-4 flex flex-col gap-4 min-h-0">
               <div className="flex items-start justify-between">
                 <div>
-                  <div className={`text-[10px] font-medium uppercase tracking-wide ${darkMode ? "text-slate-500" : "text-gray-500"}`}>Event Details</div>
-                  <div className={`text-xs font-semibold ${darkMode ? "text-slate-100" : "text-gray-900"}`}>Row #{selectedEvent?.id ?? "-"}</div>
+                  <div className={`text-[10px] font-medium uppercase tracking-wide ${darkMode ? "text-slate-500" : "text-slate-600"}`}>Event Details</div>
+                  <div className={`text-xs font-semibold ${darkMode ? "text-slate-100" : "text-slate-900"}`}>Row #{selectedEvent?.id ?? "-"}</div>
                 </div>
                 <div className="flex items-center gap-2">
                   <Button
@@ -695,27 +778,27 @@ function AuthenticatedApp() {
 
               <div
                 className={`rounded-lg border p-3 font-mono text-[11px] max-h-32 overflow-auto ${
-                  darkMode ? "border-slate-700 bg-slate-900 text-slate-200" : "border-gray-300 bg-gray-50 text-gray-800"
+                  darkMode ? "border-slate-700 bg-slate-900 text-slate-200" : "border-slate-300 bg-slate-100 text-slate-800"
                 }`}
               >
                 {selectedEvent ? (
                   <>
-                    <div className="flex"><span className={`${darkMode ? "text-slate-500" : "text-gray-500"} w-24`}>@timestamp</span><span>{selectedEvent.ts}</span></div>
-                    <div className="flex"><span className={`${darkMode ? "text-slate-500" : "text-gray-500"} w-24`}>host</span><span>{selectedEvent.host}</span></div>
-                    <div className="flex"><span className={`${darkMode ? "text-slate-500" : "text-gray-500"} w-24`}>user</span><span>{selectedEvent.user}</span></div>
-                    <div className="flex"><span className={`${darkMode ? "text-slate-500" : "text-gray-500"} w-24`}>source</span><span>{selectedEvent.source}</span></div>
-                    <div className="flex"><span className={`${darkMode ? "text-slate-500" : "text-gray-500"} w-24`}>score</span><span>{selectedEvent.score}</span></div>
+                    <div className="flex"><span className={`${darkMode ? "text-slate-500" : "text-slate-600"} w-24`}>@timestamp</span><span>{selectedEvent.ts}</span></div>
+                    <div className="flex"><span className={`${darkMode ? "text-slate-500" : "text-slate-600"} w-24`}>host</span><span>{selectedEvent.host}</span></div>
+                    <div className="flex"><span className={`${darkMode ? "text-slate-500" : "text-slate-600"} w-24`}>user</span><span>{selectedEvent.user}</span></div>
+                    <div className="flex"><span className={`${darkMode ? "text-slate-500" : "text-slate-600"} w-24`}>source</span><span>{selectedEvent.source}</span></div>
+                    <div className="flex"><span className={`${darkMode ? "text-slate-500" : "text-slate-600"} w-24`}>score</span><span>{selectedEvent.score}</span></div>
                   </>
                 ) : (
-                  <div className={`${darkMode ? "text-slate-500" : "text-gray-500"} italic`}>Select an event…</div>
+                  <div className={`${darkMode ? "text-slate-500" : "text-slate-600"} italic`}>Select an event…</div>
                 )}
               </div>
 
               <div className="flex flex-col gap-2 min-h-0 flex-1 overflow-hidden">
-                <div className={`text-[10px] font-medium uppercase tracking-wide ${darkMode ? "text-slate-500" : "text-gray-500"}`}>Raw / _source</div>
+                <div className={`text-[10px] font-medium uppercase tracking-wide ${darkMode ? "text-slate-500" : "text-slate-600"}`}>Raw / _source</div>
                 <div
                   className={`rounded-lg border p-3 font-mono text-[10px] flex-1 overflow-auto leading-relaxed whitespace-pre-wrap ${
-                    darkMode ? "border-slate-700 bg-slate-900 text-slate-200" : "border-gray-300 bg-gray-50 text-gray-800"
+                    darkMode ? "border-slate-700 bg-slate-900 text-slate-200" : "border-slate-300 bg-slate-100 text-slate-800"
                   }`}
                 >
                   {selectedEvent ? (
@@ -732,20 +815,19 @@ function AuthenticatedApp() {
                       2
                     )
                   ) : (
-                    <span className={`${darkMode ? "text-slate-500" : "text-gray-500"} italic`}>No event selected.</span>
+                    <span className={`${darkMode ? "text-slate-500" : "text-slate-600"} italic`}>No event selected.</span>
                   )}
                 </div>
               </div>
             </div>
           </aside>
         ) : null}
-      </main>
+              </>
+            )}
+        </main>
+      </div>
     </div>
   );
-}
-
-function WrenchIcon({ size = 16 }: { size?: number }) {
-  return <Wrench className="h-4 w-4" style={{ height: size, width: size }} />;
 }
 
 // Wrapper component that handles authentication
@@ -780,10 +862,5 @@ function AppContent() {
     return <LoginView />;
   }
 
-  return (
-    <>
-      <Header />
-      <AuthenticatedApp />
-    </>
-  );
+  return <AuthenticatedApp />;
 }

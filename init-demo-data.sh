@@ -24,7 +24,7 @@ echo ""
 
 # 2. Créer un case de démo
 echo -e "${BLUE}[2/3]${NC} Création d'un case de démonstration..."
-CASE_RESPONSE=$(curl -s -X POST http://localhost:8000/api/cases \
+CASE_RESPONSE=$(curl -s -X POST http://localhost:8080/api/cases \
   -H "Content-Type: application/json" \
   -d '{"case_id": "demo_case_001", "note": "Case de démonstration dataMortem"}')
 
@@ -37,7 +37,7 @@ echo ""
 
 # 3. Créer une evidence
 echo -e "${BLUE}[3/3]${NC} Création d'une evidence de test..."
-EVIDENCE_RESPONSE=$(curl -s -X POST http://localhost:8000/api/evidences \
+EVIDENCE_RESPONSE=$(curl -s -X POST http://localhost:8080/api/evidences \
   -H "Content-Type: application/json" \
   -d '{"evidence_uid": "demo_evidence_001", "case_id": "demo_case_001", "local_path": "/tmp/demo_disk.dd"}')
 

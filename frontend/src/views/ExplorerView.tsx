@@ -5,6 +5,7 @@ import { Input } from "../components/ui/Input";
 import { Badge } from "../components/ui/Badge";
 import { Search, ChevronLeft, ChevronRight, RefreshCw, Filter, Plus, Trash2, X } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
+import { searchAPI } from "../services/api";
 
 interface ExplorerViewProps {
   darkMode: boolean;
@@ -138,7 +139,7 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
 
   const textWeak = darkMode ? "text-slate-400" : "text-gray-500";
   const textStrong = darkMode ? "text-slate-100" : "text-gray-900";
-  const cardBg = darkMode ? "border-slate-700 bg-slate-900" : "border-gray-200 bg-white";
+  const cardBg = darkMode ? "border-slate-700 bg-slate-900" : "border-gray-200 bg-slate-50";
 
   const from = page * pageSize;
   const canPrev = page > 0;
@@ -274,27 +275,16 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch("/api/search/query", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...authHeaders },
-          signal: controller.signal,
-          body: JSON.stringify({
-            query: submittedQuery,
-            case_id: currentCaseId,
-            size: pageSize,
-            from: page * pageSize,
-            sort_by: "@timestamp",
-            sort_order: "desc",
-            field_filters: filterPayload,
-            time_range: timeRangePayload,
-          }),
+        const data = await searchAPI.query({
+          query: submittedQuery,
+          case_id: currentCaseId,
+          size: pageSize,
+          from: page * pageSize,
+          sort_by: "@timestamp",
+          sort_order: "desc",
+          field_filters: filterPayload,
+          time_range: timeRangePayload,
         });
-
-        if (!res.ok) {
-          throw new Error(await res.text());
-        }
-
-        const data = await res.json();
         const mapped: SearchResult[] = (data.hits || []).map((doc: any, index: number) => ({
           id: `${from + index}-${doc["@timestamp"] || ""}`,
           doc,
@@ -349,24 +339,15 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
     const runAgg = async () => {
       setAggLoading(true);
       try {
-        const res = await fetch("/api/search/aggregate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...authHeaders },
-          signal: controller.signal,
-          body: JSON.stringify({
-            case_id: currentCaseId,
-            field: aggField,
-            size: aggSize,
-            query: submittedQuery,
-            field_filters: filterPayload,
-            time_range: timeRangePayload,
-          }),
+        const data = await searchAPI.aggregate({
+          case_id: currentCaseId,
+          field: aggField,
+          size: aggSize,
+          query: submittedQuery,
+          field_filters: filterPayload,
+          time_range: timeRangePayload,
         });
-        if (!res.ok) {
-          throw new Error(await res.text());
-        }
-        const data = await res.json();
-        setAggBuckets(data.buckets || []);
+        setAggBuckets(data.aggregations?.buckets || data.buckets || []);
       } catch (err) {
         if ((err as any).name === "AbortError") return;
         console.error("aggregation failed", err);
@@ -470,7 +451,7 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
                             setSelectedEvent(null);
                           }}
                           className={`flex-shrink-0 ${
-                            darkMode ? "border-slate-700 bg-slate-800 text-slate-200" : "border-gray-300 bg-white text-gray-800"
+                            darkMode ? "border-slate-700 bg-slate-800 text-slate-200" : "border-gray-300 bg-slate-50 text-slate-800"
                           }`}
                         >
                           Filter
@@ -487,92 +468,206 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
     );
   };
 
+  // Calculer si la sidebar doit être réduite (les deux sections sont collapsées)
+  const sidebarFullyCollapsed = !fieldExplorerOpen && aggCollapsed;
+
   return (
     <div className="flex h-full gap-4 overflow-hidden">
-      <div className="w-72 flex-shrink-0 space-y-4 overflow-auto">
-        <Card className={cardBg}>
-          <CardContent className="p-4 space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setFieldExplorerOpen((open) => !open)}
-                  className={`text-sm font-semibold ${textStrong}`}
-                >
-                  Field explorer
-                </button>
-                <Badge className="text-[10px]">{fieldSamples.length}</Badge>
+      <div
+        className={`flex-shrink-0 space-y-4 overflow-auto transition-all duration-300 ${
+          sidebarFullyCollapsed ? 'w-16' : 'w-72'
+        }`}
+        style={{ scrollbarWidth: 'thin' }}
+      >
+        {!sidebarFullyCollapsed && (
+          <Card className={cardBg}>
+            <CardContent className="p-4 space-y-3">
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setFieldExplorerOpen((open) => !open)}
+                    className={`text-sm font-semibold ${textStrong}`}
+                  >
+                    Field explorer
+                  </button>
+                  <Badge className="text-[10px]">{fieldSamples.length}</Badge>
+                </div>
+                {fieldExplorerOpen && (
+                  <Input
+                    value={fieldSearch}
+                    onChange={(e) => setFieldSearch(e.target.value)}
+                    placeholder="Search fields"
+                    className={`w-full text-xs ${darkMode ? "border-slate-700 bg-slate-900 text-slate-50" : ""}`}
+                  />
+                )}
               </div>
-              {fieldExplorerOpen && (
-                <Input
-                  value={fieldSearch}
-                  onChange={(e) => setFieldSearch(e.target.value)}
-                  placeholder="Search fields"
-                  className={`text-xs ${darkMode ? "border-slate-700 bg-slate-900 text-slate-50" : ""}`}
-                />
-              )}
-            </div>
-            {fieldExplorerOpen ? (
-              filteredFieldSamples.length === 0 ? (
-                <p className={`text-sm ${textWeak}`}>No fields detected.</p>
-              ) : (
-                <div className="max-h-[calc(100vh-220px)] overflow-auto divide-y divide-slate-800/40 text-sm">
-                  {filteredFieldSamples.map((sample) => (
-                    <div key={sample.field} className="flex items-center gap-2 py-2">
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs font-semibold truncate">{sample.field}</div>
-                        <div className={`text-xs truncate ${textWeak}`}>{sample.value}</div>
+              {fieldExplorerOpen ? (
+                filteredFieldSamples.length === 0 ? (
+                  <p className={`text-sm ${textWeak}`}>No fields detected.</p>
+                ) : (
+                  <div className="max-h-[calc(100vh-220px)] overflow-auto divide-y divide-slate-800/40 text-sm" style={{ scrollbarWidth: 'thin' }}>
+                    {filteredFieldSamples.map((sample) => (
+                      <div key={sample.field} className="flex items-center gap-2 py-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-semibold truncate">{sample.field}</div>
+                          <div className={`text-xs truncate ${textWeak}`}>{sample.value}</div>
+                        </div>
+                        <Button
+                          onClick={() => handleQuickFilterAdd(sample.field, sample.value)}
+                          className={`transition active:scale-95 ${
+                            darkMode ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800" : "border-gray-300 bg-slate-50 text-slate-800 hover:bg-slate-100"
+                          }`}
+                        >
+                          Filter
+                        </Button>
                       </div>
-                      <Button
-                        onClick={() => handleQuickFilterAdd(sample.field, sample.value)}
-                        className={`transition active:scale-95 ${
-                          darkMode ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800" : "border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
+                    ))}
+                  </div>
+                )
+              ) : (
+                <p className={`text-xs italic ${textWeak}`}>Collapsed</p>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {!sidebarFullyCollapsed && (
+          <Card className={cardBg}>
+            <CardContent className="p-4 space-y-3">
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setAggCollapsed((prev) => !prev)}
+                    className={`text-sm font-semibold ${textStrong}`}
+                  >
+                    Aggregations
+                  </button>
+                  <Badge className="text-[10px]">{aggBuckets.length}</Badge>
+                </div>
+                {aggCollapsed ? (
+                  <p className={`text-xs italic ${textWeak}`}>Collapsed</p>
+                ) : (
+                  <>
+                    <div className="flex flex-col gap-2">
+                      <select
+                        value={aggField}
+                        onChange={(e) => setAggField(e.target.value)}
+                        className={`w-full h-8 rounded-lg border px-2 text-sm ${
+                          darkMode ? "border-slate-700 bg-slate-900 text-slate-50" : "border-gray-300 bg-slate-50 text-gray-900"
                         }`}
                       >
-                        Filter
-                      </Button>
+                        {aggregationFieldOptions.map((field) => (
+                          <option key={field.value} value={field.value}>
+                            {field.label}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        value={aggSize}
+                        onChange={(e) => setAggSize(parseInt(e.target.value, 10))}
+                        className={`w-full h-8 rounded-lg border px-2 text-sm ${
+                          darkMode ? "border-slate-700 bg-slate-900 text-slate-50" : "border-gray-300 bg-slate-50 text-gray-900"
+                        }`}
+                      >
+                        {[5, 10, 20, 50].map((size) => (
+                          <option key={size} value={size}>
+                            Top {size}
+                          </option>
+                        ))}
+                      </select>
                     </div>
-                  ))}
-                </div>
-              )
-            ) : (
-              <p className={`text-xs italic ${textWeak}`}>Collapsed</p>
-            )}
-          </CardContent>
-        </Card>
+                    <div className="max-h-64 overflow-auto" style={{ scrollbarWidth: 'thin' }}>
+                      {aggLoading ? (
+                        <p className={`text-sm ${textWeak}`}>Loading aggregations…</p>
+                      ) : aggBuckets.length === 0 ? (
+                        <p className={`text-sm ${textWeak}`}>No buckets.</p>
+                      ) : (
+                        <div className="space-y-1">
+                          {aggBuckets.map((bucket) => (
+                            <button
+                              key={bucket.key}
+                              onClick={() => handleBucketClick(bucket)}
+                              className={`w-full flex items-center justify-between rounded-lg border px-3 py-2 text-left text-sm transition active:scale-95 ${
+                                darkMode ? "border-slate-800 hover:bg-slate-800 hover:border-violet-600/30" : "border-gray-200 hover:bg-slate-100 hover:border-violet-300"
+                              }`}
+                            >
+                              <span className="truncate">{bucket.key || "<empty>"}</span>
+                              <span className="text-xs font-semibold ml-2">{bucket.count}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Boutons compacts quand la sidebar est réduite */}
+        {sidebarFullyCollapsed && (
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={() => setFieldExplorerOpen(true)}
+              className={`w-full h-10 rounded-lg border flex items-center justify-center transition ${
+                darkMode
+                  ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
+                  : "border-gray-300 bg-slate-50 text-slate-700 hover:bg-slate-100"
+              }`}
+              title="Expand Field Explorer"
+            >
+              <Filter className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setAggCollapsed(false)}
+              className={`w-full h-10 rounded-lg border flex items-center justify-center transition ${
+                darkMode
+                  ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
+                  : "border-gray-300 bg-slate-50 text-slate-700 hover:bg-slate-100"
+              }`}
+              title="Expand Aggregations"
+            >
+              <Search className="h-4 w-4" />
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="flex flex-1 flex-col gap-4 overflow-hidden min-h-0">
         <Card className={cardBg}>
-          <CardContent className="p-4 space-y-4">
-          <div className="flex flex-col gap-2">
-            <label className={`text-sm font-semibold ${textStrong}`}>Search query</label>
-            <div className="flex flex-col gap-2 md:flex-row">
+          <CardContent className="p-4 space-y-3">
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-2">
+              <label className={`text-xs font-semibold ${textStrong} whitespace-nowrap`}>Query</label>
               <div className="flex flex-1 items-center gap-2">
                 <Input
                   value={queryInput}
                   onChange={(e) => setQueryInput(e.target.value)}
                   placeholder="ex: process.name:svchost.exe AND event.type:file"
-                  className={darkMode ? "border-slate-700 bg-slate-900 text-slate-50" : ""}
+                  className={`h-8 text-sm ${darkMode ? "border-slate-700 bg-slate-900 text-slate-50" : ""}`}
                 />
                 <Button
                   onClick={triggerSearch}
-                  className={`transition active:scale-95 ${
+                  className={`h-8 px-3 whitespace-nowrap transition active:scale-95 ${
                     darkMode
                       ? "border-violet-600/30 bg-violet-950/40 text-violet-200 hover:bg-violet-900/50"
                       : "border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100"
                   }`}
                 >
-                  <Search className="h-4 w-4 mr-2" />
+                  <Search className="h-4 w-4 mr-1" />
                   Search
                 </Button>
               </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <label className={`text-xs ${textWeak}`}>Page size</label>
+            </div>
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <label className={`text-xs ${textWeak} whitespace-nowrap`}>Page size</label>
                 <select
                   value={pageSize}
                   onChange={(e) => setPageSize(parseInt(e.target.value, 10))}
-                  className={`rounded-lg border px-2 py-1 text-sm ${
-                    darkMode ? "border-slate-700 bg-slate-900 text-slate-100" : "border-gray-300 bg-white text-gray-900"
+                  className={`h-8 rounded-lg border px-2 text-sm ${
+                    darkMode ? "border-slate-700 bg-slate-900 text-slate-100" : "border-gray-300 bg-slate-50 text-gray-900"
                   }`}
                 >
                   {PAGE_SIZE_OPTIONS.map((option) => (
@@ -581,28 +676,31 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
                     </option>
                   ))}
                 </select>
-                <label className={`text-xs ${textWeak}`}>Time range</label>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className={`text-xs ${textWeak} whitespace-nowrap`}>Time range</label>
                 <Input
                   value={timeRange.gte}
                   onChange={(e) => setTimeRange((prev) => ({ ...prev, gte: e.target.value }))}
                   placeholder="gte (ex: 2024-11-01T00:00:00Z)"
-                  className={`w-48 ${darkMode ? "border-slate-700 bg-slate-900 text-slate-50" : ""}`}
+                  className={`h-8 w-48 text-sm ${darkMode ? "border-slate-700 bg-slate-900 text-slate-50" : ""}`}
                 />
                 <Input
                   value={timeRange.lte}
                   onChange={(e) => setTimeRange((prev) => ({ ...prev, lte: e.target.value }))}
                   placeholder="lte"
-                  className={`w-48 ${darkMode ? "border-slate-700 bg-slate-900 text-slate-50" : ""}`}
+                  className={`h-8 w-32 text-sm ${darkMode ? "border-slate-700 bg-slate-900 text-slate-50" : ""}`}
                 />
-                <Button
-                  onClick={() => setRefreshToken((t) => t + 1)}
-                  className={`transition active:scale-95 ${
-                    darkMode ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800" : "border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
-                  }`}
-                >
-                  <RefreshCw className="h-4 w-4" />
-                </Button>
               </div>
+              <Button
+                onClick={() => setRefreshToken((t) => t + 1)}
+                className={`h-8 w-8 p-0 transition active:scale-95 ${
+                  darkMode ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800" : "border-gray-300 bg-slate-50 text-slate-800 hover:bg-slate-100"
+                }`}
+                title="Refresh"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
             </div>
           </div>
 
@@ -613,7 +711,7 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
               <Button
                 onClick={addFilterRow}
                 className={`transition active:scale-95 ${
-                  darkMode ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800" : "border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
+                  darkMode ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800" : "border-gray-300 bg-slate-50 text-slate-800 hover:bg-slate-100"
                 }`}
               >
                 <Plus className="h-4 w-4" />
@@ -629,7 +727,7 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
                     value={row.field}
                     onChange={(e) => updateFilterRow(row.id, { field: e.target.value })}
                     className={`rounded-lg border px-2 py-1 text-sm ${
-                      darkMode ? "border-slate-700 bg-slate-900 text-slate-50" : "border-gray-300 bg-white text-gray-900"
+                      darkMode ? "border-slate-700 bg-slate-900 text-slate-50" : "border-gray-300 bg-slate-50 text-gray-900"
                     }`}
                   >
                     <option value="">Choose field</option>
@@ -643,7 +741,7 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
                     value={row.operator}
                     onChange={(e) => updateFilterRow(row.id, { operator: e.target.value as FilterOperator })}
                     className={`rounded-lg border px-2 py-1 text-sm ${
-                      darkMode ? "border-slate-700 bg-slate-900 text-slate-50" : "border-gray-300 bg-white text-gray-900"
+                      darkMode ? "border-slate-700 bg-slate-900 text-slate-50" : "border-gray-300 bg-slate-50 text-gray-900"
                     }`}
                   >
                     {FILTER_OPERATORS.map((op) => (
@@ -692,7 +790,7 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
               <span className={`text-sm font-semibold ${textStrong}`}>Results</span>
               <Badge
                 className={`text-[10px] border ${
-                  darkMode ? "bg-slate-900 text-slate-200 border-slate-700" : "bg-gray-50 text-gray-700 border-gray-200"
+                  darkMode ? "bg-slate-900 text-slate-200 border-slate-700" : "bg-gray-50 text-slate-700 border-gray-200"
                 }`}
               >
                 {pageInfo}
@@ -702,7 +800,7 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
               <Button
                 disabled={!canPrev || loading}
                 onClick={() => setPage((p) => Math.max(0, p - 1))}
-                className={`${darkMode ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800" : "border-gray-300 bg-white text-gray-800 hover:bg-gray-50"} disabled:opacity-40 disabled:cursor-not-allowed transition`}
+                className={`${darkMode ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800" : "border-gray-300 bg-slate-50 text-slate-800 hover:bg-slate-100"} disabled:opacity-40 disabled:cursor-not-allowed transition`}
               >
                 <ChevronLeft className="h-4 w-4" />
                 Prev
@@ -710,7 +808,7 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
               <Button
                 disabled={!canNext || loading}
                 onClick={() => setPage((p) => p + 1)}
-                className={`${darkMode ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800" : "border-gray-300 bg-white text-gray-800 hover:bg-gray-50"} disabled:opacity-40 disabled:cursor-not-allowed transition`}
+                className={`${darkMode ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800" : "border-gray-300 bg-slate-50 text-slate-800 hover:bg-slate-100"} disabled:opacity-40 disabled:cursor-not-allowed transition`}
               >
                 Next
                 <ChevronRight className="h-4 w-4" />
@@ -743,7 +841,7 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
                       key={hit.id}
                       onClick={() => setSelectedEvent(hit)}
                       className={`cursor-pointer transition ${
-                        darkMode ? "hover:bg-slate-800/50" : "hover:bg-gray-100"
+                        darkMode ? "hover:bg-slate-800/50" : "hover:bg-slate-200"
                       }`}
                     >
                       <td className="px-4 py-2 text-xs text-slate-400">{hit.timestamp || "-"}</td>
@@ -758,76 +856,6 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
           </div>
         </CardContent>
       </Card>
-
-      <div className="flex-1 min-h-0 w-full">
-        <Card className={cardBg}>
-          <CardContent className="p-4 space-y-3">
-            <div className="flex items-center gap-3">
-              <span className={`text-sm font-semibold ${textStrong}`}>Aggregations</span>
-              <select
-                value={aggField}
-                onChange={(e) => setAggField(e.target.value)}
-                className={`rounded-lg border px-2 py-1 text-sm ${
-                  darkMode ? "border-slate-700 bg-slate-900 text-slate-50" : "border-gray-300 bg-white text-gray-900"
-                }`}
-              >
-                {aggregationFieldOptions.map((field) => (
-                  <option key={field.value} value={field.value}>
-                    {field.label}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={aggSize}
-                onChange={(e) => setAggSize(parseInt(e.target.value, 10))}
-                className={`rounded-lg border px-2 py-1 text-sm ${
-                  darkMode ? "border-slate-700 bg-slate-900 text-slate-50" : "border-gray-300 bg-white text-gray-900"
-                }`}
-              >
-                {[5, 10, 20, 50].map((size) => (
-                  <option key={size} value={size}>
-                    Top {size}
-                  </option>
-                ))}
-              </select>
-              <Button
-                onClick={() => setAggCollapsed((prev) => !prev)}
-                className={`text-xs px-2 py-1 ${
-                  darkMode ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800" : "border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
-                }`}
-              >
-                {aggCollapsed ? "Expand" : "Reduce"}
-              </Button>
-            </div>
-            {aggCollapsed ? (
-              <p className={`text-xs italic ${textWeak}`}>Aggregation panel reduced. Click Expand to view buckets.</p>
-            ) : (
-              <div className="max-h-64 overflow-auto">
-                {aggLoading ? (
-                  <p className={`text-sm ${textWeak}`}>Loading aggregations…</p>
-                ) : aggBuckets.length === 0 ? (
-                  <p className={`text-sm ${textWeak}`}>No buckets.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {aggBuckets.map((bucket) => (
-                      <button
-                        key={bucket.key}
-                        onClick={() => handleBucketClick(bucket)}
-                        className={`w-full flex items-center justify-between rounded-lg border px-3 py-2 text-left transition active:scale-95 ${
-                          darkMode ? "border-slate-800 hover:bg-slate-800 hover:border-violet-600/30" : "border-gray-200 hover:bg-gray-50 hover:border-violet-300"
-                        }`}
-                      >
-                        <span className="text-sm truncate">{bucket.key || "<empty>"}</span>
-                        <span className="text-xs font-semibold">{bucket.count}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
     </div>
       {renderEventDetail()}
     </div>

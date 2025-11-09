@@ -74,7 +74,7 @@ Une fois qu'un module a terminé avec succès:
 1. Cliquez sur **"Indexer dans OpenSearch"** (si le bouton est implémenté)
 2. Ou utilisez l'API directement:
 ```bash
-curl -X POST http://localhost:8000/api/indexing/task-run \
+curl -X POST http://localhost:8080/api/indexing/task-run \
   -H "Content-Type: application/json" \
   -d '{"task_run_id": 1}'
 ```
@@ -86,7 +86,7 @@ curl -X POST http://localhost:8000/api/indexing/task-run \
 ### Vérifier que les modules sont visibles via l'API
 
 ```bash
-curl http://localhost:8000/api/pipeline | jq
+curl http://localhost:8080/api/pipeline | jq
 ```
 
 Devrait retourner 2 modules.
@@ -94,13 +94,13 @@ Devrait retourner 2 modules.
 ### Vérifier le case
 
 ```bash
-curl http://localhost:8000/api/cases | jq
+curl http://localhost:8080/api/cases | jq
 ```
 
 ### Vérifier l'evidence
 
 ```bash
-curl http://localhost:8000/api/evidences | jq
+curl http://localhost:8080/api/evidences | jq
 ```
 
 ---
@@ -161,7 +161,7 @@ Si vous voulez ajouter un bouton pour indexer directement depuis l'interface, aj
 ```typescript
 const handleIndex = async (taskRunId: number) => {
   try {
-    const response = await fetch('http://localhost:8000/api/indexing/task-run', {
+    const response = await fetch('http://localhost:8080/api/indexing/task-run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ task_run_id: taskRunId })
@@ -192,7 +192,7 @@ const handleIndex = async (taskRunId: number) => {
 ### Créer un nouveau case
 
 ```bash
-curl -X POST http://localhost:8000/api/cases \
+curl -X POST http://localhost:8080/api/cases \
   -H "Content-Type: application/json" \
   -d '{"case_id": "mon_case_001", "note": "Mon investigation"}' | jq
 ```
@@ -200,7 +200,7 @@ curl -X POST http://localhost:8000/api/cases \
 ### Créer une nouvelle evidence
 
 ```bash
-curl -X POST http://localhost:8000/api/evidences \
+curl -X POST http://localhost:8080/api/evidences \
   -H "Content-Type: application/json" \
   -d '{
     "evidence_uid": "mon_evidence_001",
@@ -226,7 +226,7 @@ uv run python -m app.seed_modules
 
 ```bash
 # 1. Vérifier que les modules existent via l'API
-curl http://localhost:8000/api/pipeline | jq
+curl http://localhost:8080/api/pipeline | jq
 
 # 2. Si vide, réexécuter le seed
 cd services/api
@@ -239,7 +239,7 @@ uv run python -m app.seed_modules
 
 ```bash
 # Vérifier que l'API est démarrée
-curl http://localhost:8000/health
+curl http://localhost:8080/health
 
 # Si erreur, voir les logs
 tail -f logs/api.log
@@ -248,7 +248,7 @@ tail -f logs/api.log
 ### Le frontend ne se connecte pas à l'API
 
 Vérifiez que l'URL de l'API est correcte dans votre code frontend.
-L'API devrait être sur `http://localhost:8000`.
+L'API devrait être sur `http://localhost:8080`.
 
 ---
 
@@ -257,7 +257,7 @@ L'API devrait être sur `http://localhost:8000`.
 - **Guide rapide:** `QUICK_START.md`
 - **Guide complet:** `STACK_SETUP.md`
 - **Status actuel:** `STATUS.md`
-- **API Swagger:** http://localhost:8000/docs
+- **API Swagger:** http://localhost:8080/docs
 
 ---
 

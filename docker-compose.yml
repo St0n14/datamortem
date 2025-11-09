@@ -1,4 +1,20 @@
 services:
+  traefik:
+    image: traefik:v3.0
+    container_name: datamortem-traefik
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:8080"
+    ports:
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - api
+    networks:
+      - datamortem
+
   # PostgreSQL - Metadata database
   postgres:
     image: postgres:16-alpine
@@ -99,8 +115,6 @@ services:
       - DM_ALLOWED_ORIGINS=http://localhost:5174,http://127.0.0.1:5174,http://frontend:5174
       - DM_LAKE_ROOT=/lake
       - DM_JWT_SECRET=${DM_JWT_SECRET:-dev_secret_key_change_in_production_12345678}
-    ports:
-      - "8000:8000"
     volumes:
       - ./services/api:/app
       - lake-data:/lake
@@ -114,6 +128,11 @@ services:
     networks:
       - datamortem
     command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api.rule=PathPrefix(`/api`) || Path(`/health`) || PathPrefix(`/docs`) || PathPrefix(`/redoc`)"
+      - "traefik.http.routers.api.entrypoints=web"
+      - "traefik.http.services.api.loadbalancer.server.port=8000"
 
   # Celery Worker - Background tasks
   celery-worker:

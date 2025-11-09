@@ -12,7 +12,7 @@ Ce guide explique comment démarrer toute la stack dataMortem avec OpenSearch in
                             │ REST API
 ┌───────────────────────────┴─────────────────────────────┐
 │                    API FastAPI                           │
-│                   http://localhost:8000                  │
+│                   http://localhost:8080                  │
 └─┬─────────────┬─────────────┬─────────────┬────────────┘
   │             │             │             │
   ▼             ▼             ▼             ▼
@@ -52,6 +52,27 @@ Ce script va automatiquement:
 ```bash
 ./stop-stack.sh
 ```
+
+---
+
+### Mode multi-réplicas / load balancing (local)
+
+Une instance Traefik est maintenant incluse pour équilibrer les requêtes entre plusieurs API FastAPI.
+
+1. Démarrer la stack complète :
+   ```bash
+   docker-compose up -d --build
+   ```
+2. Ajouter des réplicas API (et workers) à la volée :
+   ```bash
+   docker-compose up -d --scale api=2 --scale celery-worker=2
+   ```
+3. Vérifier que le load balancer répond :
+   ```bash
+   curl http://localhost:8080/health
+   ```
+
+Traefik écoute sur `http://localhost:8080` et route automatiquement vers tous les conteneurs `api`. Le frontend (port 5174) et les clients doivent maintenant appeler `http://localhost:8080/api/...`.
 
 ---
 
@@ -101,6 +122,18 @@ DM_OPENSEARCH_HOST=localhost
 DM_OPENSEARCH_PORT=9200
 ...
 ```
+
+> 🔐 **Important – DM_JWT_SECRET obligatoire**
+>
+> - Générez un secret aléatoire d’au moins 32 caractères, par exemple :
+>   ```bash
+>   openssl rand -hex 32
+>   ```
+> - Ajoutez la valeur à `services/api/.env` :
+>   ```
+>   DM_JWT_SECRET=6f8d4f0d4bb24e50a8d14bb6b1c8d9b2...
+>   ```
+> - L’API refusera de démarrer si ce secret est absent ou trop court (pour éviter les tokens falsifiés).
 
 ---
 
@@ -171,13 +204,13 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 **Vérification:**
 ```bash
 # Health check
-curl http://localhost:8000/health
+curl http://localhost:8080/health
 
 # OpenSearch health
-curl http://localhost:8000/api/search/health
+curl http://localhost:8080/api/search/health
 
 # Swagger UI
-open http://localhost:8000/docs
+open http://localhost:8080/docs
 ```
 
 ---
@@ -204,7 +237,7 @@ Le frontend sera accessible sur **http://localhost:5174**
 ### 1. Créer un case de test
 
 ```bash
-curl -X POST http://localhost:8000/api/cases \
+curl -X POST http://localhost:8080/api/cases \
   -H "Content-Type: application/json" \
   -d '{
     "case_id": "case_demo_001",
@@ -215,7 +248,7 @@ curl -X POST http://localhost:8000/api/cases \
 ### 2. Créer une evidence (fictive)
 
 ```bash
-curl -X POST http://localhost:8000/api/evidence \
+curl -X POST http://localhost:8080/api/evidence \
   -H "Content-Type: application/json" \
   -d '{
     "evidence_uid": "evidence_demo_001",
@@ -236,7 +269,7 @@ python test_opensearch.py
 Supposons que vous avez un TaskRun avec id=1:
 
 ```bash
-curl -X POST http://localhost:8000/api/indexing/task-run \
+curl -X POST http://localhost:8080/api/indexing/task-run \
   -H "Content-Type: application/json" \
   -d '{
     "task_run_id": 1
@@ -246,7 +279,7 @@ curl -X POST http://localhost:8000/api/indexing/task-run \
 ### 5. Rechercher dans OpenSearch
 
 ```bash
-curl -X POST http://localhost:8000/api/search/query \
+curl -X POST http://localhost:8080/api/search/query \
   -H "Content-Type: application/json" \
   -d '{
     "query": "*",
@@ -258,7 +291,7 @@ curl -X POST http://localhost:8000/api/search/query \
 ### 6. Voir le résumé d'indexation d'un case
 
 ```bash
-curl http://localhost:8000/api/indexing/case/test_case_001/summary | jq
+curl http://localhost:8080/api/indexing/case/test_case_001/summary | jq
 ```
 
 ---
@@ -271,7 +304,7 @@ Les nouveaux endpoints disponibles pour le frontend:
 
 ```typescript
 // POST /api/indexing/task-run
-const response = await fetch('http://localhost:8000/api/indexing/task-run', {
+const response = await fetch('http://localhost:8080/api/indexing/task-run', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ task_run_id: 123 })
@@ -285,7 +318,7 @@ const result = await response.json();
 
 ```typescript
 // POST /api/indexing/case
-const response = await fetch('http://localhost:8000/api/indexing/case', {
+const response = await fetch('http://localhost:8080/api/indexing/case', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
@@ -300,7 +333,7 @@ const response = await fetch('http://localhost:8000/api/indexing/case', {
 ```typescript
 // GET /api/indexing/case/{case_id}/summary
 const response = await fetch(
-  'http://localhost:8000/api/indexing/case/case_123/summary'
+  'http://localhost:8080/api/indexing/case/case_123/summary'
 );
 
 const summary = await response.json();
@@ -324,7 +357,7 @@ const summary = await response.json();
 
 ```typescript
 // POST /api/search/query
-const response = await fetch('http://localhost:8000/api/search/query', {
+const response = await fetch('http://localhost:8080/api/search/query', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
@@ -352,8 +385,8 @@ const results = await response.json();
 | Service | URL | Description |
 |---------|-----|-------------|
 | **Frontend** | http://localhost:5174 | Interface React |
-| **API** | http://localhost:8000 | API FastAPI |
-| **API Docs** | http://localhost:8000/docs | Swagger UI |
+| **API** | http://localhost:8080 | API FastAPI |
+| **API Docs** | http://localhost:8080/docs | Swagger UI |
 | **OpenSearch** | http://localhost:9200 | API OpenSearch |
 | **OpenSearch Dashboards** | http://localhost:5601 | Interface de visualisation |
 | **PostgreSQL** | localhost:5432 | Base de données |
@@ -466,7 +499,7 @@ docker-compose logs -f redis
 
 Tous les endpoints sont documentés dans Swagger UI:
 
-**http://localhost:8000/docs**
+**http://localhost:8080/docs**
 
 Sections:
 - **cases** - Gestion des investigations

@@ -102,7 +102,7 @@ uv run python -m app.init_admin
 # 2. Attendre que tout soit prêt (30s)
 
 # 3. Créer un utilisateur
-curl -X POST http://localhost:8000/api/auth/register \
+curl -X POST http://localhost:8080/api/auth/register \
   -H "Content-Type: application/json" \
   -d '{
     "email": "analyst@test.com",
@@ -112,7 +112,7 @@ curl -X POST http://localhost:8000/api/auth/register \
   }'
 
 # 4. Login
-TOKEN=$(curl -X POST http://localhost:8000/api/auth/login \
+TOKEN=$(curl -X POST http://localhost:8080/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "username": "analyst",
@@ -122,11 +122,11 @@ TOKEN=$(curl -X POST http://localhost:8000/api/auth/login \
 echo "Token: $TOKEN"
 
 # 5. Tester l'accès authentifié
-curl -X GET http://localhost:8000/api/auth/me \
+curl -X GET http://localhost:8080/api/auth/me \
   -H "Authorization: Bearer $TOKEN"
 
 # 6. Tester Swagger UI
-open http://localhost:8000/docs
+open http://localhost:8080/docs
 # Cliquer "Authorize", entrer: Bearer <token>
 ```
 

@@ -10,8 +10,23 @@
 
 # 3. Ouvrir le navigateur
 open http://localhost:5174  # Frontend
-open http://localhost:8000/docs  # API Docs
+open http://localhost:8080/docs  # API Docs
 ```
+
+---
+
+## 🔐 Avant de lancer : définir `DM_JWT_SECRET`
+
+- Copiez `services/api/.env.example` vers `services/api/.env` si ce n’est pas déjà fait.
+- Générez un secret aléatoire d’au moins 32 caractères :
+  ```bash
+  openssl rand -hex 32
+  ```
+- Ajoutez la ligne suivante dans `services/api/.env` :
+  ```
+  DM_JWT_SECRET=6f8d4f0d4bb24e50a8d14bb6b1c8d9b2...
+  ```
+- Sans cette valeur, l’API refusera de démarrer (sécurité JWT).
 
 ---
 
@@ -32,7 +47,7 @@ open http://localhost:8000/docs  # API Docs
 | Service | URL |
 |---------|-----|
 | **Frontend** | http://localhost:5174 |
-| **API Docs** | http://localhost:8000/docs |
+| **API Docs** | http://localhost:8080/docs |
 | **OpenSearch Dashboards** | http://localhost:5601 |
 
 ---
@@ -51,20 +66,20 @@ open http://localhost:8000/docs  # API Docs
 
 ```bash
 # Indexer les résultats d'un TaskRun spécifique
-curl -X POST http://localhost:8000/api/indexing/task-run \
+curl -X POST http://localhost:8080/api/indexing/task-run \
   -H "Content-Type: application/json" \
   -d '{"task_run_id": 1}'
 
 # Indexer tout un case
-curl -X POST http://localhost:8000/api/indexing/case \
+curl -X POST http://localhost:8080/api/indexing/case \
   -H "Content-Type: application/json" \
   -d '{"case_id": "case_123"}'
 
 # Voir le résumé d'indexation
-curl http://localhost:8000/api/indexing/case/case_123/summary | jq
+curl http://localhost:8080/api/indexing/case/case_123/summary | jq
 
 # Rechercher dans les événements
-curl -X POST http://localhost:8000/api/search/query \
+curl -X POST http://localhost:8080/api/search/query \
   -H "Content-Type: application/json" \
   -d '{
     "query": "svchost.exe",
@@ -131,17 +146,17 @@ Voir `STACK_SETUP.md` pour:
 
 ```bash
 # 1. Health check API
-curl http://localhost:8000/health
+curl http://localhost:8080/health
 
 # 2. Health check OpenSearch
-curl http://localhost:8000/api/search/health
+curl http://localhost:8080/api/search/health
 
 # 3. Créer des données de test et indexer
 cd services/api
 python test_opensearch.py
 
 # 4. Rechercher dans les données de test
-curl -X POST http://localhost:8000/api/search/query \
+curl -X POST http://localhost:8080/api/search/query \
   -H "Content-Type: application/json" \
   -d '{"query": "svchost.exe", "case_id": "test_case_001", "size": 5}' | jq
 ```

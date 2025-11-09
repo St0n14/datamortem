@@ -29,7 +29,7 @@ For development, a default insecure key is provided in `docker-compose.yml`.
 ### 3. Register Your First User
 
 ```bash
-curl -X POST http://localhost:8000/api/auth/register \
+curl -X POST http://localhost:8080/api/auth/register \
   -H "Content-Type: application/json" \
   -d '{
     "email": "admin@example.com",
@@ -42,7 +42,7 @@ curl -X POST http://localhost:8000/api/auth/register \
 ### 4. Login
 
 ```bash
-curl -X POST http://localhost:8000/api/auth/login \
+curl -X POST http://localhost:8080/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "username": "admin",
@@ -64,7 +64,7 @@ Response:
 Include the token in the `Authorization` header for protected endpoints:
 
 ```bash
-curl -X GET http://localhost:8000/api/auth/me \
+curl -X GET http://localhost:8080/api/auth/me \
   -H "Authorization: Bearer <your_access_token>"
 ```
 
@@ -185,5 +185,5 @@ db.commit()
 ## API Documentation
 
 Full interactive API documentation available at:
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
+- Swagger UI: http://localhost:8080/docs
+- ReDoc: http://localhost:8080/redoc

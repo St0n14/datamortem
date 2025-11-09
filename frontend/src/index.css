@@ -5,7 +5,7 @@
 /* Timesketch-inspired custom styles */
 @layer base {
   body {
-    @apply bg-gray-50 text-gray-900 antialiased;
+    @apply bg-slate-100 text-slate-900 antialiased;
   }
 }
 
@@ -62,7 +62,7 @@
 
   /* Cards - Timesketch style */
   .ts-card {
-    @apply bg-white rounded-lg shadow border border-gray-200 p-6 hover:shadow-md transition-shadow;
+    @apply bg-slate-50 rounded-lg shadow border border-gray-200 p-6 hover:shadow-md transition-shadow;
   }
 
   /* Timeline items */
@@ -85,7 +85,7 @@
   }
 
   .btn-secondary {
-    @apply bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 font-medium px-4 py-2 rounded-lg transition-colors inline-flex items-center gap-2;
+    @apply bg-slate-50 hover:bg-slate-100 text-slate-700 border border-gray-300 font-medium px-4 py-2 rounded-lg transition-colors inline-flex items-center gap-2;
   }
 
   .btn-sm {
@@ -100,9 +100,9 @@
 }
 
 ::-webkit-scrollbar-track {
-  @apply bg-gray-100;
+  @apply bg-slate-200;
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-gray-400 rounded hover:bg-gray-500;
+  @apply bg-slate-400 rounded hover:bg-slate-500;
 }

@@ -42,6 +42,12 @@ class User(Base):
         cascade="all, delete-orphan",
     )
 
+    custom_scripts: Mapped[List["CustomScript"]] = relationship(
+        "CustomScript",
+        back_populates="owner",
+        cascade="all, delete-orphan",
+    )
+
 
 # -----------------
 # Case
@@ -145,6 +151,45 @@ class AnalysisModule(Base):
     )
 
 
+class CustomScript(Base):
+    __tablename__ = "custom_scripts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String, unique=True, index=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    language: Mapped[str] = mapped_column(String, default="python")
+    source_code: Mapped[str] = mapped_column(Text)
+    created_at_utc: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_by_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    is_approved: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    published_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    owner: Mapped["User"] = relationship(
+        "User",
+        back_populates="custom_scripts",
+    )
+    assignments: Mapped[List["UserScript"]] = relationship(
+        "UserScript",
+        back_populates="script",
+        cascade="all, delete-orphan",
+    )
+
+
+class UserScript(Base):
+    __tablename__ = "user_scripts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    script_id: Mapped[int] = mapped_column(Integer, ForeignKey("custom_scripts.id"), nullable=False, index=True)
+    installed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    user: Mapped["User"] = relationship("User")
+    script: Mapped["CustomScript"] = relationship(
+        "CustomScript",
+        back_populates="assignments",
+    )
+
+
 # -----------------
 # TaskRun
 # -----------------
@@ -182,6 +227,12 @@ class TaskRun(Base):
         nullable=True,
         index=True,
     )
+    script_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("custom_scripts.id"),
+        nullable=True,
+        index=True,
+    )
     created_at_utc: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow
     )
@@ -195,6 +246,8 @@ class TaskRun(Base):
         "Evidence",
         back_populates="task_runs",
     )
+
+    script: Mapped[Optional["CustomScript"]] = relationship("CustomScript")
 
 
 # -----------------

@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Play, Database, Check, X, Clock, Loader, AlertCircle, Activity } from 'lucide-react';
-import { evidenceAPI, pipelineAPI, indexingAPI } from '../services/api';
-import type { Evidence, AnalysisModule, TaskRun } from '../types';
+import { evidenceAPI, pipelineAPI, indexingAPI, scriptsAPI } from '../services/api';
+import type { Evidence, AnalysisModule, TaskRun, Script } from '../types';
 
 export default function PipelineView() {
   const [evidences, setEvidences] = useState<Evidence[]>([]);
   const [selectedEvidence, setSelectedEvidence] = useState<string>('');
   const [modules, setModules] = useState<AnalysisModule[]>([]);
+  const [userScripts, setUserScripts] = useState<Script[]>([]);
   const [taskRuns, setTaskRuns] = useState<TaskRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [runningTasks, setRunningTasks] = useState<Set<number>>(new Set());
@@ -15,6 +16,7 @@ export default function PipelineView() {
 
   useEffect(() => {
     loadEvidences();
+    loadUserScripts();
   }, []);
 
   useEffect(() => {
@@ -56,6 +58,15 @@ export default function PipelineView() {
     }
   };
 
+  const loadUserScripts = async () => {
+    try {
+      const data = await scriptsAPI.myScripts();
+      setUserScripts(data);
+    } catch (error) {
+      console.error('Failed to load user scripts:', error);
+    }
+  };
+
   const loadTaskRuns = async () => {
     try {
       const data = await pipelineAPI.listRuns(selectedEvidence);
@@ -82,11 +93,25 @@ export default function PipelineView() {
         evidence_uid: selectedEvidence,
       });
 
-      showMessage('success', `Started ${moduleName} (Task ID: ${taskRun.id})`);
-      setRunningTasks((prev) => new Set(prev).add(taskRun.id));
+      showMessage('success', `Started ${moduleName} (Task ID: ${taskRun.task_run_id})`);
+      setRunningTasks((prev) => new Set(prev).add(taskRun.task_run_id));
       loadTaskRuns();
     } catch (error) {
       showMessage('error', `Failed to start ${moduleName}: ${error}`);
+    }
+  };
+
+  const handleRunScript = async (scriptId: number, scriptName: string) => {
+    if (!selectedEvidence) return;
+
+    try {
+      const taskRun = await scriptsAPI.run(scriptId, { evidence_uid: selectedEvidence });
+
+      showMessage('success', `Started ${scriptName} (Task ID: ${taskRun.task_run_id})`);
+      setRunningTasks((prev) => new Set(prev).add(taskRun.task_run_id));
+      loadTaskRuns();
+    } catch (error) {
+      showMessage('error', `Failed to start ${scriptName}: ${error}`);
     }
   };
 
@@ -133,6 +158,10 @@ export default function PipelineView() {
     return taskRuns.filter((tr) => tr.module_id === moduleId);
   };
 
+  const getTaskRunsForScript = (scriptId: number) => {
+    return taskRuns.filter((tr) => tr.script_id === scriptId);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -147,7 +176,7 @@ export default function PipelineView() {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-8 py-6">
+      <div className="bg-slate-50 border-b border-gray-200 px-8 py-6">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
@@ -209,7 +238,7 @@ export default function PipelineView() {
                   const lastRun = moduleTaskRuns[0];
 
                   return (
-                    <div key={module.id} className="border border-gray-200 rounded-lg p-5 hover:shadow-md transition-shadow bg-white">
+                    <div key={module.id} className="border border-gray-200 rounded-lg p-5 hover:shadow-md transition-shadow bg-slate-50">
                       <div className="flex items-start justify-between mb-3">
                         <div>
                           <h3 className="font-semibold text-gray-900">{module.name}</h3>
@@ -293,6 +322,107 @@ export default function PipelineView() {
             </div>
           )}
 
+          {/* User Scripts */}
+          {selectedEvidence && userScripts.length > 0 && (
+            <div className="ts-card">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                My Scripts ({userScripts.length})
+              </h2>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {userScripts.map((script) => {
+                  const scriptTaskRuns = getTaskRunsForScript(script.id);
+                  const lastRun = scriptTaskRuns[0];
+                  const isRunnable = script.language === 'python';
+
+                  return (
+                    <div key={script.id} className="border border-blue-200 rounded-lg p-5 hover:shadow-md transition-shadow bg-blue-50">
+                      <div className="flex items-start justify-between mb-3">
+                        <div>
+                          <h3 className="font-semibold text-gray-900">{script.name}</h3>
+                          <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded mt-1 inline-block">
+                            {script.language}
+                          </span>
+                          {!isRunnable && (
+                            <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded mt-1 inline-block ml-1">
+                              View Only
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {script.description && (
+                        <p className="text-sm text-gray-600 mb-4">{script.description}</p>
+                      )}
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          onClick={() => handleRunScript(script.id, script.name)}
+                          disabled={!isRunnable}
+                          className="btn-primary btn-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <Play size={14} />
+                          Run
+                        </button>
+
+                        {lastRun && (
+                          <>
+                            <span className={`status-${lastRun.status} flex items-center gap-1`}>
+                              {getStatusIcon(lastRun.status)}
+                              {lastRun.status}
+                            </span>
+
+                            {lastRun.status === 'success' &&
+                              (lastRun.indexed ? (
+                                <span className="status-success flex items-center gap-1">
+                                  <Database size={12} />
+                                  Indexed
+                                </span>
+                              ) : (
+                                <button
+                                  onClick={() => handleIndexTaskRun(lastRun.id, script.name)}
+                                  disabled={indexingTasks.has(lastRun.id)}
+                                  className="btn-primary btn-sm bg-green-600 hover:bg-green-700 disabled:opacity-50"
+                                >
+                                  {indexingTasks.has(lastRun.id) ? (
+                                    <>
+                                      <Loader size={12} className="animate-spin" />
+                                      Indexing...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Database size={12} />
+                                      Index
+                                    </>
+                                  )}
+                                </button>
+                              ))}
+                          </>
+                        )}
+                      </div>
+
+                      {scriptTaskRuns.length > 0 && (
+                        <div className="mt-4 pt-4 border-t border-blue-200">
+                          <p className="text-xs font-semibold text-gray-500 mb-2">
+                            Recent Runs ({scriptTaskRuns.length})
+                          </p>
+                          {scriptTaskRuns.slice(0, 3).map((tr) => (
+                            <div key={tr.id} className="flex justify-between items-center text-xs text-gray-600 mb-1">
+                              <span className="flex items-center gap-1">
+                                {getStatusIcon(tr.status)} #{tr.id}
+                              </span>
+                              <span>{new Date(tr.created_at).toLocaleTimeString()}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Task Runs Table */}
           {selectedEvidence && taskRuns.length > 0 && (
             <div className="ts-card">
@@ -314,7 +444,7 @@ export default function PipelineView() {
                   </thead>
                   <tbody className="divide-y divide-gray-200">
                     {taskRuns.map((taskRun) => (
-                      <tr key={taskRun.id} className="hover:bg-gray-50">
+                      <tr key={taskRun.id} className="hover:bg-slate-100">
                         <td className="px-4 py-3 text-sm">#{taskRun.id}</td>
                         <td className="px-4 py-3 text-sm font-medium">
                           {taskRun.module?.name || taskRun.task_name}

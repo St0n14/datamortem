@@ -80,6 +80,8 @@ class TaskRunOut(BaseModel):
     output_path: str | None
     error_message: str | None
     module_id: int | None
+    script_id: int | None
+    script_name: str | None = None
 
 
 class TaskRunStatusUpdate(BaseModel):
@@ -101,6 +103,8 @@ def serialize_task_run(r: TaskRun) -> TaskRunOut:
         output_path=r.output_path,
         error_message=r.error_message,
         module_id=r.module_id,
+        script_id=r.script_id,
+        script_name=r.script.name if r.script else None,
     )
 
 

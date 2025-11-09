@@ -158,12 +158,12 @@ docker-compose.yml           # +DM_JWT_SECRET env var
 
 ### 2. Vérifier la santé de l'API
 ```bash
-curl http://localhost:8000/health
+curl http://localhost:8080/health
 ```
 
 ### 3. Créer un utilisateur
 ```bash
-curl -X POST http://localhost:8000/api/auth/register \
+curl -X POST http://localhost:8080/api/auth/register \
   -H "Content-Type: application/json" \
   -d '{
     "email": "test@example.com",
@@ -175,7 +175,7 @@ curl -X POST http://localhost:8000/api/auth/register \
 
 ### 4. Se connecter
 ```bash
-curl -X POST http://localhost:8000/api/auth/login \
+curl -X POST http://localhost:8080/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "username": "testuser",
@@ -187,12 +187,12 @@ curl -X POST http://localhost:8000/api/auth/login \
 ```bash
 TOKEN="<votre_token_ici>"
 
-curl -X GET http://localhost:8000/api/auth/me \
+curl -X GET http://localhost:8080/api/auth/me \
   -H "Authorization: Bearer $TOKEN"
 ```
 
 ### 6. Explorer l'API docs
-Ouvrir http://localhost:8000/docs pour tester interactivement
+Ouvrir http://localhost:8080/docs pour tester interactivement
 
 ## 📊 Métriques
 

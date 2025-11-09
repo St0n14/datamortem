@@ -54,7 +54,7 @@ npm run build
 ## Configuration
 
 Le frontend se connecte au backend via le proxy Vite configuré dans `vite.config.ts` :
-- Backend API : `http://localhost:8000/api`
+- Backend API : `http://localhost:8080/api`
 - Frontend : `http://localhost:5174`
 
 ## Architecture
@@ -161,7 +161,7 @@ Le frontend communique avec ces endpoints :
 ### L'API ne répond pas
 ```bash
 # Vérifier que l'API backend est démarrée
-curl http://localhost:8000/health
+curl http://localhost:8080/health
 ```
 
 ### Le frontend ne démarre pas
@@ -175,7 +175,7 @@ npm run dev
 ### Les modules ne s'affichent pas
 ```bash
 # Vérifier que les modules sont seedés
-curl http://localhost:8000/api/pipeline | jq
+curl http://localhost:8080/api/pipeline | jq
 
 # Si vide, exécuter
 cd services/api
@@ -197,4 +197,4 @@ npm run build
 ## Support
 
 - Documentation backend : `/home/braguette/dataMortem/STATUS.md`
-- API interactive : http://localhost:8000/docs
+- API interactive : http://localhost:8080/docs

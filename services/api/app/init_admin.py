@@ -47,7 +47,7 @@ def create_default_admin():
         print("=" * 60)
         print("")
         print("To login:")
-        print('  curl -X POST http://localhost:8000/api/auth/login \\')
+        print('  curl -X POST http://localhost:8080/api/auth/login \\')
         print('    -H "Content-Type: application/json" \\')
         print('    -d \'{"username": "admin", "password": "admin123"}\'')
         print("")

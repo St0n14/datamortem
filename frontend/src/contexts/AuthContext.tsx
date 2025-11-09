@@ -36,6 +36,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined) || 'http://localhost:8080/api';
 
   // Load token from localStorage on mount
   useEffect(() => {
@@ -51,7 +52,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const fetchUserInfo = async (authToken: string) => {
     try {
-      const response = await fetch('http://localhost:8000/api/auth/me', {
+      const response = await fetch(`${apiBaseUrl}/auth/me`, {
         headers: {
           'Authorization': `Bearer ${authToken}`,
         },
@@ -76,7 +77,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const login = async (username: string, password: string) => {
     try {
-      const response = await fetch('http://localhost:8000/api/auth/login', {
+      const response = await fetch(`${apiBaseUrl}/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

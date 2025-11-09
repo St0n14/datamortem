@@ -1,15 +1,19 @@
 # ✅ Stack dataMortem - Statut Opérationnel
 
 **Date:** 2025-11-06 12:05
-**Status:** ✅ TOUTE LA STACK EST OPÉRATIONNELLE
+**Status:** ✅ STACK OPERABLE EN LOCAL (LB + marketplace, quotas)
 
 ---
 
 ## 🆕 Changements récents
 
-- ✅ Config centralisée via `.env` + defaults dev (`services/api/app/config.py`, `.env.example`)
-- ✅ Explorer amélioré : filtres avancés, field explorer, agrégations/timeline (UX type Timesketch)
-- ✅ Timeline & résultats se vident proprement lors d’un changement de case sans index
+- ✅ **Sécurité API** : RBAC complet (ownership cases/évidences) + endpoints protégés.
+- ✅ **Quotas utilisateurs** : un seul case pour les analystes, limite de 20 Go sur les evidences (admins exemptés).
+- ✅ **Scripts personnalisés & marketplace** : stockage + exécution Python pour admins, marketplace consultable par tous, assignation contrôlée via un admin.
+- ✅ **Durcissement scripts** : endpoints admin-only, noms sanitizés, exécution localisée pending sandbox.
+- ✅ **Load balancing local** : Traefik devant plusieurs réplicas FastAPI, frontend/config adaptés (`http://localhost:8080`).
+- ✅ **Tests de charge** : scripts k6 (`load-tests/`) pour valider la montée en charge avant industrialisation.
+- ✅ Config centralisée via `.env`, Explorer moderne, timeline qui se réinitialise correctement.
 
 ---
 
@@ -21,7 +25,8 @@
 | **Redis** | ✅ Running | 6379 | Docker |
 | **OpenSearch** | ✅ Running | 9200 | Docker |
 | **OpenSearch Dashboards** | ✅ Running | 5601 | Docker |
-| **API FastAPI** | ✅ Running | 8000 | Voir api.pid |
+| **Traefik (LB)** | ✅ Running | 8080 | Docker |
+| **API FastAPI** | ✅ Running | interne 8000 (via Traefik) | Voir api.pid |
 | **Celery Worker** | ✅ Running | - | Voir celery-worker.pid |
 
 ---
@@ -41,9 +46,9 @@
 ## 🌐 URLs disponibles
 
 ### Application
-- **Frontend**: http://localhost:5174 (à démarrer si besoin)
-- **API**: http://localhost:8000
-- **API Docs (Swagger)**: http://localhost:8000/docs
+- **Frontend**: http://localhost:5174
+- **API (via Traefik)**: http://localhost:8080
+- **API Docs (Swagger)**: http://localhost:8080/docs
 
 ### Services
 - **OpenSearch**: http://localhost:9200
@@ -53,7 +58,7 @@
 
 ---
 
-## 🎯 Endpoints API disponibles
+## 🎯 Endpoints API clés
 
 ### Indexation (Nouveaux!)
 ```bash
@@ -108,19 +113,19 @@ GET /api/search/health
 
 ### 1. Créer un case
 ```bash
-curl -X POST http://localhost:8000/api/cases \
+curl -X POST http://localhost:8080/api/cases \
   -H "Content-Type: application/json" \
   -d '{"case_id": "test_001", "note": "Test case"}'
 ```
 
 ### 2. Vérifier la santé OpenSearch
 ```bash
-curl http://localhost:8000/api/search/health | jq
+curl http://localhost:8080/api/search/health | jq
 ```
 
 ### 3. Voir le résumé d'indexation
 ```bash
-curl http://localhost:8000/api/indexing/case/test_001/summary | jq
+curl http://localhost:8080/api/indexing/case/test_001/summary | jq
 ```
 
 ---
@@ -170,7 +175,7 @@ Pour déclencher l'indexation depuis React:
 ```typescript
 // Exemple: Bouton "Indexer" dans PipelineView
 const handleIndex = async (taskRunId: number) => {
-  const response = await fetch('http://localhost:8000/api/indexing/task-run', {
+  const response = await fetch('http://localhost:8080/api/indexing/task-run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ task_run_id: taskRunId })
@@ -185,7 +190,7 @@ const handleIndex = async (taskRunId: number) => {
 
 // Exemple: Recherche
 const handleSearch = async (caseId: string, query: string) => {
-  const response = await fetch('http://localhost:8000/api/search/query', {
+  const response = await fetch('http://localhost:8080/api/search/query', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -225,7 +230,7 @@ DM_OPENSEARCH_PORT=9200
 - **Guide rapide**: `QUICK_START.md`
 - **Guide complet**: `STACK_SETUP.md`
 - **Tests OpenSearch**: `services/api/OPENSEARCH_TESTING.md`
-- **API Interactive**: http://localhost:8000/docs
+- **API Interactive**: http://localhost:8080/docs
 
 ---
 
@@ -243,3 +248,42 @@ DM_OPENSEARCH_PORT=9200
 **La stack est prête à être utilisée!** 🎉
 
 Pour toute question, consultez la documentation ou les logs.
+
+## 📈 Tests de montée en charge
+
+- Scripts k6 dans `load-tests/` (`health-smoke.js`, `search-health-throughput.js`)
+- Exemple : `k6 run load-tests/health-smoke.js` (configurable via `API_BASE_URL`, `VUS`, etc.)
+- Sert à valider Traefik + scaling (`docker-compose up -d --scale api=2`)
+
+---
+
+## ✅ Travail réalisé
+
+1. **Sécurisation backend**
+   - Auth JWT + RBAC par case/évidence/pipeline/indexing
+   - Routes publiques verrouillées, artefacts confinés à `/lake`
+2. **Scripts custom & pipeline**
+   - CRUD des scripts (Python/Perl/Rust), exécution Celery + stockage output
+   - UI Scripts pour création, copie, exécution ciblée
+3. **Load balancing local**
+   - Traefik ajouté à docker-compose, front/config pointent vers `:8080`
+   - Docs/scripts mis à jour (`start-stack.sh`, `STACK_SETUP.md`)
+4. **Outils de test**
+   - Scripts k6 + documentation pour montée en charge locale
+   - Guide pour scaler API/workers avec `docker-compose`
+
+---
+
+- **New Case button** : au besoin, le 1ᵉʳ case peut désormais être créé via l’UI (bouton “Create first case”), sinon un admin doit le faire.
+- **⚠️ Migrations DB** : appliquer les colonnes `task_run.script_id`, `custom_scripts.is_approved`, `user_scripts` avant production (cf. instructions DB).
+
+---
+
+## 🔜 Reste à faire
+
+- [ ] Externaliser `/lake` (S3/GCS ou volume partagé) pour préparer le multi-nœuds.
+- [ ] Passer Postgres/Redis/OpenSearch en services managés ou multi-nœuds.
+- [ ] Définir l’orchestrateur cible (GKE/Cloud Run/Swarm) + ingress prod.
+- [ ] Ajouter du monitoring (Prometheus/Grafana ou Cloud Monitoring) + alertes.
+- [ ] Finaliser la montée en charge (CI/CD, Terraform/Helm) une fois les choix infra validés.
+- [ ] ⚠️ Sandbox scripts custom avant déploiement GCP (conteneur dédié, montages read-only). Bloquer la fonctionnalité si sandbox absent.
