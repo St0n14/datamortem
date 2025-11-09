@@ -130,11 +130,12 @@ export function PipelineView({ selectedEvidenceUid, darkMode }: PipelineViewProp
     setScriptsLoading(true);
     setScriptError(null);
     try {
-      const data = await scriptsAPI.list();
+      const data = await scriptsAPI.myScripts();
       setScripts(data);
     } catch (error) {
-      console.error('Failed to load scripts:', error);
-      setScriptError('Unable to load custom scripts. Check API logs.');
+      console.error('Failed to load user scripts:', error);
+      // Silently fail if no scripts installed - this is normal for new users
+      setScripts([]);
     } finally {
       setScriptsLoading(false);
     }
@@ -320,10 +321,10 @@ export function PipelineView({ selectedEvidenceUid, darkMode }: PipelineViewProp
           <div>
             <div className={`flex items-center gap-2 text-sm font-semibold ${textStrong}`}>
               <FileCode2 className="h-4 w-4" />
-              Custom Scripts
+              My Scripts
             </div>
             <p className={`text-xs ${textWeak}`}>
-              Manage scripts in the “Scripts” tab, then launch them here on the selected evidence.
+              Install scripts from the Marketplace, then launch them here on the selected evidence.
             </p>
           </div>
           <div className="space-y-1 text-xs text-right">
@@ -335,7 +336,7 @@ export function PipelineView({ selectedEvidenceUid, darkMode }: PipelineViewProp
           <div className={`mt-3 text-sm ${textWeak}`}>Loading scripts…</div>
         ) : scripts.length === 0 ? (
           <div className={`mt-3 text-sm ${textWeak}`}>
-            No script saved yet. Use the Scripts tab to add one.
+            No scripts installed yet. Visit the Marketplace tab to install scripts.
           </div>
         ) : (
           <div className="mt-4 grid gap-3 md:grid-cols-2">

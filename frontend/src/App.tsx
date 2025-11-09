@@ -59,6 +59,7 @@ type TimelineBucket = {
 
 // Main authenticated app component
 function AuthenticatedApp() {
+  const { user } = useAuth();
   const [darkMode, setDarkMode] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeTab, setActiveTab] =
@@ -373,7 +374,11 @@ function AuthenticatedApp() {
             Navigation
           </p>
           <div className="flex flex-col gap-1">
-            {navItems.map((item) => {
+            {navItems.filter((item) => {
+              // Filter "scripts" tab for admins only
+              if (item.key === "scripts" && user?.role !== "admin") return false;
+              return true;
+            }).map((item) => {
               const active = activeTab === item.key;
               return (
                 <button

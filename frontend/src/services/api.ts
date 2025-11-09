@@ -255,6 +255,11 @@ export const scriptsAPI = {
     }),
 
   myScripts: () => fetchAPI<Script[]>('/scripts/my-scripts'),
+
+  uninstallFromAll: (scriptId: number) =>
+    fetchAPI<{ status: string; script_id: number; uninstalled_from: number }>(`/scripts/${scriptId}/uninstall-all`, {
+      method: 'DELETE',
+    }),
 };
 
 // Rules API

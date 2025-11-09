@@ -81,6 +81,7 @@ dependencies = [
     { name = "pyjwt" },
     { name = "python-multipart" },
     { name = "redis" },
+    { name = "requests" },
     { name = "sqlalchemy" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -104,6 +105,7 @@ requires-dist = [
     { name = "pyjwt", specifier = ">=2.8.0" },
     { name = "python-multipart", specifier = "==0.0.12" },
     { name = "redis", specifier = "==5.0.8" },
+    { name = "requests", specifier = ">=2.32.0" },
     { name = "sqlalchemy", specifier = "==2.0.36" },
     { name = "uvicorn", extras = ["standard"], specifier = "==0.30.0" },
 ]

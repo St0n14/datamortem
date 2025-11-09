@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
@@ -13,7 +14,6 @@ interface ScriptsViewProps {
 
 export function ScriptsView({ darkMode }: ScriptsViewProps) {
   const [scripts, setScripts] = useState<Script[]>([]);
-  const [myScripts, setMyScripts] = useState<Script[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,13 +32,16 @@ export function ScriptsView({ darkMode }: ScriptsViewProps) {
     scripts_path: 'scripts',
   });
   const [isImporting, setIsImporting] = useState(false);
+  const [isGithubSectionOpen, setIsGithubSectionOpen] = useState(false);
+  const [isScriptsSectionOpen, setIsScriptsSectionOpen] = useState(true);
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
 
   useEffect(() => {
-    loadScripts();
-    if (!isAdmin) {
-      loadMyScripts();
+    if (isAdmin) {
+      loadScripts();
+    } else {
+      setIsLoading(false);
     }
   }, [isAdmin]);
 
@@ -46,22 +49,12 @@ export function ScriptsView({ darkMode }: ScriptsViewProps) {
     setIsLoading(true);
     setError(null);
     try {
-      // Admin: load all scripts, Non-admin: load marketplace only
-      const data = isAdmin ? await scriptsAPI.list() : await scriptsAPI.marketplace();
+      const data = await scriptsAPI.list();
       setScripts(data);
     } catch (err: any) {
       setError(err.message || 'Unable to load scripts');
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const loadMyScripts = async () => {
-    try {
-      const data = await scriptsAPI.myScripts();
-      setMyScripts(data);
-    } catch (err: any) {
-      console.error('Failed to load installed scripts:', err);
     }
   };
 
@@ -138,26 +131,30 @@ export function ScriptsView({ darkMode }: ScriptsViewProps) {
     try {
       await scriptsAPI.approve(scriptId, approved);
       setSuccess(approved ? 'Script approuvé pour le marketplace!' : 'Approbation retirée.');
-      // Recharger la liste
       await loadScripts();
     } catch (err: any) {
       setError(err.message || "Impossible de modifier l'approbation.");
     }
   };
 
-  const handleInstall = async (scriptId: number) => {
+  const handleUninstallFromAll = async (scriptId: number, scriptName: string) => {
+    if (!isAdmin) {
+      setError("Seuls les administrateurs peuvent désinstaller des scripts.");
+      return;
+    }
+
+    if (!confirm(`Êtes-vous sûr de vouloir désinstaller "${scriptName}" de tous les profils utilisateurs ?`)) {
+      return;
+    }
+
     setError(null);
     setSuccess(null);
     try {
-      const result = await scriptsAPI.install(scriptId);
-      if (result.status === 'already_installed') {
-        setSuccess('Ce script est déjà installé dans votre profil.');
-      } else {
-        setSuccess('Script installé! Il est maintenant disponible dans Pipeline.');
-      }
-      await loadMyScripts();
+      const result = await scriptsAPI.uninstallFromAll(scriptId);
+      setSuccess(`Script désinstallé de ${result.uninstalled_from} profil(s) utilisateur(s).`);
+      await loadScripts();
     } catch (err: any) {
-      setError(err.message || "Impossible d'installer le script.");
+      setError(err.message || "Impossible de désinstaller le script.");
     }
   };
 
@@ -193,41 +190,32 @@ export function ScriptsView({ darkMode }: ScriptsViewProps) {
       <Card className={darkMode ? 'border-slate-800 bg-slate-950/60' : 'border-gray-200 bg-white'}>
         <CardContent className="space-y-4 p-6">
           <div>
-            <h2 className={`text-lg font-semibold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>Marketplace / Scripts d'analyse</h2>
+            <h2 className={`text-lg font-semibold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>Gestion des Scripts</h2>
             <p className={`text-sm ${darkMode ? 'text-slate-400' : 'text-gray-600'}`}>
               {isAdmin
-                ? 'Réservé aux administrateurs. Choisissez Python pour exécuter automatiquement (Perl/Rust : stockage uniquement).'
-                : "Impossible de créer ou lancer un script sans autorisation. Parcourez le catalogue et contactez un administrateur pour l'installation."}
+                ? 'Créer, gérer et approuver des scripts d\'analyse. Les scripts approuvés apparaissent dans le Marketplace pour tous les utilisateurs.'
+                : "Vous n'avez pas les permissions nécessaires pour gérer les scripts. Rendez-vous dans Marketplace pour installer des scripts."}
             </p>
           </div>
 
           {isAdmin ? (
             <>
               <form className="space-y-4" onSubmit={handleSubmit}>
-              <div className="grid gap-4 md:grid-cols-3">
+              <div className="grid gap-4 md:grid-cols-2">
                 <div>
                   <label className={`mb-1 block text-xs font-semibold uppercase tracking-wide ${darkMode ? 'text-slate-200' : 'text-gray-700'}`}>
-                    Nom
+                    Nom *
                   </label>
                   <Input
                     value={formState.name}
                     onChange={(event) => setFormState((prev) => ({ ...prev, name: event.target.value }))}
                     placeholder="Ex: enrich_process_metadata"
+                    required
                   />
                 </div>
                 <div>
                   <label className={`mb-1 block text-xs font-semibold uppercase tracking-wide ${darkMode ? 'text-slate-200' : 'text-gray-700'}`}>
-                    Description (optionnel)
-                  </label>
-                  <Input
-                    value={formState.description}
-                    onChange={(event) => setFormState((prev) => ({ ...prev, description: event.target.value }))}
-                    placeholder="Détail du rôle du script"
-                  />
-                </div>
-                <div>
-                  <label className={`mb-1 block text-xs font-semibold uppercase tracking-wide ${darkMode ? 'text-slate-200' : 'text-gray-700'}`}>
-                    Langage
+                    Langage *
                   </label>
                   <select
                     value={formState.language}
@@ -250,7 +238,23 @@ export function ScriptsView({ darkMode }: ScriptsViewProps) {
 
               <div>
                 <label className={`mb-1 block text-xs font-semibold uppercase tracking-wide ${darkMode ? 'text-slate-200' : 'text-gray-700'}`}>
-                  Script
+                  Description
+                </label>
+                <textarea
+                  className={`min-h-[80px] w-full rounded-lg border px-3 py-2 text-sm ${
+                    darkMode
+                      ? 'border-slate-800 bg-slate-900 text-slate-100 focus:border-violet-600 focus:outline-none'
+                      : 'border-gray-300 bg-white text-gray-900 focus:border-violet-500 focus:outline-none'
+                  }`}
+                  value={formState.description}
+                  onChange={(event) => setFormState((prev) => ({ ...prev, description: event.target.value }))}
+                  placeholder="Décrivez le rôle et la fonctionnalité de ce script..."
+                />
+              </div>
+
+              <div>
+                <label className={`mb-1 block text-xs font-semibold uppercase tracking-wide ${darkMode ? 'text-slate-200' : 'text-gray-700'}`}>
+                  Code Source *
                 </label>
                 <textarea
                   className={`min-h-[200px] w-full rounded-lg border px-3 py-2 font-mono text-sm ${
@@ -284,10 +288,18 @@ export function ScriptsView({ darkMode }: ScriptsViewProps) {
             </form>
 
             <div className="pt-6 border-t border-slate-700">
-              <h3 className={`text-sm font-semibold mb-3 ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>
-                Importer depuis GitHub
-              </h3>
-              <form className="space-y-3" onSubmit={handleGitHubImport}>
+              <div
+                className={`flex items-center justify-between mb-3 cursor-pointer ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}
+                onClick={() => setIsGithubSectionOpen(!isGithubSectionOpen)}
+              >
+                <h3 className="text-sm font-semibold">
+                  Importer depuis GitHub
+                </h3>
+                {isGithubSectionOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              </div>
+
+              {isGithubSectionOpen && (
+                <form className="space-y-3" onSubmit={handleGitHubImport}>
                 <div className="grid gap-3 md:grid-cols-3">
                   <div>
                     <label className={`mb-1 block text-xs font-semibold uppercase tracking-wide ${darkMode ? 'text-slate-200' : 'text-gray-700'}`}>
@@ -334,6 +346,7 @@ export function ScriptsView({ darkMode }: ScriptsViewProps) {
                   {isImporting ? 'Import en cours...' : 'Importer les scripts .py'}
                 </Button>
               </form>
+              )}
             </div>
             </>
           ) : (
@@ -350,14 +363,20 @@ export function ScriptsView({ darkMode }: ScriptsViewProps) {
 
       <Card className={darkMode ? 'border-slate-800 bg-slate-950/40' : 'border-gray-200 bg-slate-50'}>
         <CardContent className="space-y-4 p-6">
-          <div className="flex items-center justify-between">
-            <h3 className={`text-base font-semibold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>Scripts enregistrés</h3>
+          <div
+            className="flex items-center justify-between cursor-pointer"
+            onClick={() => setIsScriptsSectionOpen(!isScriptsSectionOpen)}
+          >
+            <div className="flex items-center gap-2">
+              <h3 className={`text-base font-semibold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>Scripts enregistrés</h3>
+              {isScriptsSectionOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </div>
             <Badge className={darkMode ? 'border-slate-700 bg-slate-900 text-slate-200' : 'border-gray-200 bg-gray-50 text-slate-700'}>
               {scripts.length} scripts
             </Badge>
           </div>
 
-          {isLoading ? (
+          {isScriptsSectionOpen && (isLoading ? (
             <p className={darkMode ? 'text-slate-400' : 'text-gray-600'}>Chargement...</p>
           ) : scripts.length === 0 ? (
             <div
@@ -408,21 +427,16 @@ export function ScriptsView({ darkMode }: ScriptsViewProps) {
                           {script.is_approved ? 'Retirer du marketplace' : 'Approuver pour marketplace'}
                         </Button>
                       )}
-                      {!isAdmin && script.is_approved && (
+                      {isAdmin && (
                         <Button
                           className={`h-7 border px-2 text-xs ${
-                            myScripts.some(s => s.id === script.id)
-                              ? darkMode
-                                ? 'border-slate-700 bg-slate-800 text-slate-400 cursor-not-allowed'
-                                : 'border-gray-300 bg-gray-100 text-gray-500 cursor-not-allowed'
-                              : darkMode
-                              ? 'border-sky-600/30 bg-sky-950/40 text-sky-200 hover:bg-sky-900/30'
-                              : 'border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100'
+                            darkMode
+                              ? 'border-orange-600/30 bg-orange-950/40 text-orange-200 hover:bg-orange-900/30'
+                              : 'border-orange-300 bg-orange-50 text-orange-700 hover:bg-orange-100'
                           }`}
-                          onClick={() => handleInstall(script.id)}
-                          disabled={myScripts.some(s => s.id === script.id)}
+                          onClick={() => handleUninstallFromAll(script.id, script.name)}
                         >
-                          {myScripts.some(s => s.id === script.id) ? '✓ Installé' : 'Installer'}
+                          Désinstaller de tous les profils
                         </Button>
                       )}
                       <Button
@@ -436,7 +450,12 @@ export function ScriptsView({ darkMode }: ScriptsViewProps) {
                     </div>
                   </div>
                   {script.description && (
-                    <p className={`mt-1 text-sm ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>{script.description}</p>
+                    <div className={`mt-3 rounded-lg border px-3 py-2 ${darkMode ? 'border-slate-800 bg-slate-900/40' : 'border-gray-200 bg-gray-50'}`}>
+                      <p className={`text-xs font-semibold uppercase tracking-wide mb-1 ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                        Description
+                      </p>
+                      <p className={`text-sm ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>{script.description}</p>
+                    </div>
                   )}
                   <div className="mt-3 flex flex-col gap-2 md:flex-row md:items-center">
                     <div className="flex-1">
@@ -488,7 +507,7 @@ export function ScriptsView({ darkMode }: ScriptsViewProps) {
                 </div>
               ))}
             </div>
-          )}
+          ))}
         </CardContent>
       </Card>
     </div>

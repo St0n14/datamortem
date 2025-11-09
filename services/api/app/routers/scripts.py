@@ -335,3 +335,29 @@ def assign_script(
     db.commit()
 
     return {"status": "assigned", "user_id": req.user_id, "script_id": script_id}
+
+
+@router.delete("/{script_id}/uninstall-all")
+def uninstall_from_all_users(
+    script_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+):
+    """Admin endpoint to remove a script from all users' profiles."""
+    script = _get_script(script_id, db)
+    if not script:
+        raise HTTPException(status_code=404, detail="Script not found")
+
+    # Delete all UserScript entries for this script
+    deleted_count = (
+        db.query(UserScript)
+        .filter(UserScript.script_id == script_id)
+        .delete()
+    )
+    db.commit()
+
+    return {
+        "status": "success",
+        "script_id": script_id,
+        "uninstalled_from": deleted_count,
+    }
