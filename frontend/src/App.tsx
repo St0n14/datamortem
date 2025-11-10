@@ -234,7 +234,7 @@ function AuthenticatedApp() {
   const bgApp = darkMode ? "bg-slate-950 text-slate-50" : "bg-slate-50 text-slate-900";
 
   return (
-    <div className={`flex h-screen w-full font-sans ${bgApp}`}>
+    <div className={`flex h-screen w-full font-sans ${darkMode ? "dark" : ""} ${bgApp}`}>
       <Sidebar
         darkMode={darkMode}
         sidebarCollapsed={sidebarCollapsed}

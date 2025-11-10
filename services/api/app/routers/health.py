@@ -73,6 +73,19 @@ def check_opensearch() -> dict:
         return {"status": "unhealthy", "message": str(e)}
 
 
+@router.get("")
+async def health_check():
+    """
+    Simple health check endpoint (public)
+    Returns basic API status
+    """
+    return {
+        "status": "healthy",
+        "service": "datamortem-api",
+        "message": "API is running"
+    }
+
+
 @router.get("/status")
 async def get_system_status(current_user: User = Depends(get_current_active_user)):
     """

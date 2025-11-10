@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select
 from datetime import datetime
 import json
+import logging
 
 from ..db import SessionLocal
 from ..models import Event, Case, User
@@ -16,6 +17,11 @@ from ..auth.permissions import (
     get_accessible_case_ids,
     is_admin_user,
 )
+from ..opensearch.client import get_opensearch_client
+from ..opensearch.indexer import index_events_batch
+from ..config import settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -176,4 +182,43 @@ def ingest_events(
     db.add_all(new_objs)
     db.commit()
 
-    return {"ok": True, "ingested": len(new_objs)}
+    # Indexer les événements dans OpenSearch
+    # Groupe par case_id pour l'indexation
+    events_by_case = {}
+    for ev in payload:
+        if ev.case_id not in events_by_case:
+            events_by_case[ev.case_id] = []
+        events_by_case[ev.case_id].append(ev.dict())
+
+    # Indexe chaque groupe de case
+    opensearch_stats = {}
+    try:
+        client = get_opensearch_client(settings)
+        for case_id, events in events_by_case.items():
+            # Récupère le case pour le nom optionnel
+            case = db.execute(
+                select(Case).where(Case.case_id == case_id)
+            ).scalar_one_or_none()
+
+            case_name = case.note if case else None
+
+            # Indexe dans OpenSearch
+            stats = index_events_batch(
+                client=client,
+                events=events,
+                case_id=case_id,
+                case_name=case_name
+            )
+            opensearch_stats[case_id] = stats
+            logger.info(f"Indexed {stats['indexed']} events to OpenSearch for case {case_id}")
+    except Exception as e:
+        logger.error(f"OpenSearch indexation failed (events saved to DB): {e}")
+        # On ne fait pas échouer la requête si l'indexation OS échoue
+        # Les événements sont déjà dans PostgreSQL
+        opensearch_stats = {"error": str(e)}
+
+    return {
+        "ok": True,
+        "ingested": len(new_objs),
+        "opensearch": opensearch_stats
+    }

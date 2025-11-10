@@ -17,13 +17,15 @@ def get_index_name(case_id: str) -> str:
 
     Pattern: datamortem-case-{case_id}
 
+    Note: OpenSearch requires lowercase index names, so case_id is converted to lowercase.
+
     Args:
         case_id: Case identifier
 
     Returns:
-        Index name string
+        Index name string (lowercase)
     """
-    return f"datamortem-case-{case_id}"
+    return f"datamortem-case-{case_id.lower()}"
 
 
 def create_index_if_not_exists(

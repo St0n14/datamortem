@@ -31,11 +31,11 @@ def parse_args():
                         help="Note to attach to the case")
     parser.add_argument("--evidence-uid", default="demo_evidence",
                         help="Evidence UID to create/use")
-parser.add_argument("--events", type=int, default=2000,
+    parser.add_argument("--events", type=int, default=2000,
                         help="Number of synthetic events to ingest")
-parser.add_argument("--chunk-size", type=int, default=500,
+    parser.add_argument("--chunk-size", type=int, default=500,
                         help="Batch size for /api/events/ingest")
-parser.add_argument("--max-minutes", type=int, default=24 * 60,
+    parser.add_argument("--max-minutes", type=int, default=24 * 60,
                         help="Spread events over the last N minutes (default: 24h)")
     return parser.parse_args()
 

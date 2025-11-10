@@ -360,3 +360,110 @@ def delete_case_documents(client: OpenSearch, case_id: str) -> dict:
     logger.info(f"Deleted {response['deleted']} documents from {index_name}")
 
     return response
+
+
+def index_events_batch(
+    client: OpenSearch,
+    events: List[Dict],
+    case_id: str,
+    batch_size: int = 500,
+    case_name: Optional[str] = None
+) -> dict:
+    """
+    Indexe une liste d'événements directement dans OpenSearch.
+    Utilisé par l'endpoint /events/ingest.
+
+    Args:
+        client: OpenSearch client instance
+        events: Liste de dictionnaires d'événements
+        case_id: Case identifier
+        batch_size: Bulk indexing batch size
+        case_name: Optional case name
+
+    Returns:
+        Dict with stats: {indexed: int, failed: int, errors: list, total_events: int}
+    """
+    from .index_manager import get_index_name, create_index_if_not_exists
+
+    if not events:
+        return {"indexed": 0, "failed": 0, "errors": [], "total_events": 0}
+
+    # S'assure que l'index existe
+    index_name = get_index_name(case_id)
+    create_index_if_not_exists(client, case_id)
+
+    logger.info(f"Starting event batch indexation: {len(events)} events -> {index_name}")
+
+    # Stats
+    stats = {
+        "indexed": 0,
+        "failed": 0,
+        "errors": [],
+        "total_events": len(events)
+    }
+
+    # Génère les documents pour bulk indexing
+    def generate_docs() -> Iterator[Dict]:
+        for idx, event in enumerate(events):
+            try:
+                # Crée le document OpenSearch
+                doc = {
+                    "@timestamp": event.get("ts"),
+                    "case": {"id": case_id},
+                    "evidence": {"uid": event.get("evidence_uid")},
+                    "source": {"parser": event.get("source", "api_ingest")},
+                    "event": {"type": event.get("source", "unknown")},
+                    "host": {"hostname": event.get("host")},
+                    "user": {"name": event.get("user")},
+                    "message": event.get("message"),
+                    "tags": event.get("tags", []),
+                    "score": event.get("score"),
+                    "indexed_at": datetime.utcnow().isoformat()
+                }
+
+                if case_name:
+                    doc["case"]["name"] = case_name
+
+                # Ajoute les données raw si présentes
+                if event.get("raw"):
+                    doc["raw"] = event["raw"]
+
+                yield {
+                    "_index": index_name,
+                    "_source": doc
+                }
+            except Exception as e:
+                logger.warning(f"Error preparing event document at index {idx}: {e}")
+                stats["failed"] += 1
+                if len(stats["errors"]) < 10:
+                    stats["errors"].append(f"Event {idx}: {str(e)}")
+
+    # Bulk indexing
+    try:
+        success_count, failed_items = helpers.bulk(
+            client,
+            generate_docs(),
+            chunk_size=batch_size,
+            raise_on_error=False,
+            stats_only=False
+        )
+
+        stats["indexed"] = success_count
+
+        if failed_items:
+            stats["failed"] += len(failed_items)
+            for item in failed_items[:10]:
+                if "error" in item:
+                    stats["errors"].append(str(item["error"]))
+            logger.error(f"Failed to index {len(failed_items)} events")
+
+        logger.info(
+            f"Event batch indexation complete: {success_count} indexed, "
+            f"{len(failed_items) if failed_items else 0} failed from {len(events)} events"
+        )
+
+    except Exception as e:
+        logger.error(f"Bulk indexing failed: {e}")
+        stats["errors"].append(f"Bulk operation error: {str(e)}")
+
+    return stats
