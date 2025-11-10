@@ -1,6 +1,7 @@
 import { BrandMark } from "../BrandMark";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
+import type { Role } from "../../contexts/AuthContext";
 import {
   Clock,
   Search,
@@ -9,6 +10,7 @@ import {
   Store,
   FileCode2,
   ShieldCheck,
+  UserCheck,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
@@ -18,10 +20,11 @@ type CaseSummary = {
   status?: string;
   note?: string | null;
   created_at_utc?: string;
+  hedgedoc_url?: string | null;
 };
 
 type NavItem = {
-  key: "timeline" | "explorer" | "evidences" | "pipeline" | "marketplace" | "scripts" | "rules";
+  key: "timeline" | "explorer" | "evidences" | "pipeline" | "marketplace" | "scripts" | "rules" | "admin";
   label: string;
   icon: JSX.Element;
 };
@@ -34,9 +37,9 @@ interface SidebarProps {
   currentCaseId: string;
   onCaseSelect: (caseId: string) => void;
   selectedEvidenceUid: string | null;
-  activeTab: "timeline" | "explorer" | "evidences" | "pipeline" | "marketplace" | "scripts" | "rules";
-  onTabChange: (tab: "timeline" | "explorer" | "evidences" | "pipeline" | "marketplace" | "scripts" | "rules") => void;
-  userRole?: string;
+  activeTab: "timeline" | "explorer" | "evidences" | "pipeline" | "marketplace" | "scripts" | "rules" | "admin";
+  onTabChange: (tab: "timeline" | "explorer" | "evidences" | "pipeline" | "marketplace" | "scripts" | "rules" | "admin") => void;
+  userRole?: Role;
   eventsCount: number;
 }
 
@@ -54,15 +57,17 @@ export function Sidebar({
   eventsCount,
 }: SidebarProps) {
   const textWeak = darkMode ? "text-slate-500" : "text-slate-600";
+  const isSuperAdmin = userRole === "superadmin";
 
   const navItems: NavItem[] = [
     { key: "timeline", label: "Timeline", icon: <Clock className="h-4 w-4" /> },
-    { key: "explorer", label: "Explorer", icon: <Search className="h-4 w-4" /> },
+    ...(!isSuperAdmin ? [{ key: "explorer", label: "Explorer", icon: <Search className="h-4 w-4" /> }] : []),
     { key: "evidences", label: "Evidences", icon: <HardDrive className="h-4 w-4" /> },
     { key: "pipeline", label: "Pipeline", icon: <Wrench className="h-4 w-4" /> },
     { key: "marketplace", label: "Marketplace", icon: <Store className="h-4 w-4" /> },
     { key: "scripts", label: "Scripts", icon: <FileCode2 className="h-4 w-4" /> },
     { key: "rules", label: "Rules", icon: <ShieldCheck className="h-4 w-4" /> },
+    ...(isSuperAdmin ? [{ key: "admin", label: "Admin", icon: <UserCheck className="h-4 w-4" /> }] : []),
   ];
 
   return (
@@ -136,8 +141,10 @@ export function Sidebar({
         </p>
         <div className="flex flex-col gap-1">
           {navItems.filter((item) => {
-            // Filter "scripts" tab for admins only
-            if (item.key === "scripts" && userRole !== "admin") return false;
+            const isScriptTab = item.key === "scripts";
+            if (isScriptTab && userRole !== "superadmin" && userRole !== "admin") {
+              return false;
+            }
             return true;
           }).map((item) => {
             const active = activeTab === item.key;

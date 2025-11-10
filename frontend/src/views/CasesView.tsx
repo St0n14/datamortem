@@ -84,7 +84,7 @@ export default function CasesView() {
             </thead>
             <tbody>
               {cases.map((case_) => (
-                <tr key={case_.id}>
+                <tr key={case_.case_id}>
                   <td>
                     <button
                       onClick={() => setSelectedCase(case_.case_id)}
@@ -105,7 +105,7 @@ export default function CasesView() {
                       {case_.status}
                     </span>
                   </td>
-                  <td>{new Date(case_.created_at).toLocaleString()}</td>
+                  <td>{new Date(case_.created_at_utc).toLocaleString()}</td>
                   <td>
                     <button className="btn btn-secondary btn-sm">View</button>
                   </td>

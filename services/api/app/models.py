@@ -26,11 +26,20 @@ class User(Base):
     username: Mapped[str] = mapped_column(String, unique=True, index=True)
     hashed_password: Mapped[str] = mapped_column(String)
     full_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    email_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    email_verification_token: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True, unique=True, index=True
+    )
+    email_verification_sent_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True
+    )
 
     # Role-based access control
-    role: Mapped[str] = mapped_column(String, default="analyst")  # admin, analyst, viewer
+    role: Mapped[str] = mapped_column(String, default="analyst")  # superadmin, admin, analyst, viewer
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_superuser: Mapped[bool] = mapped_column(Boolean, default=False)
+    otp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    otp_secret: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     created_at_utc: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     last_login_utc: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
@@ -64,6 +73,10 @@ class Case(Base):
 
     # Remplace "description" par "note"
     note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    hedgedoc_slug: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True, unique=True, index=True
+    )
 
     # Owner (user who created the case)
     owner_id: Mapped[Optional[int]] = mapped_column(

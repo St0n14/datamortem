@@ -35,21 +35,28 @@ export function ScriptsView({ darkMode }: ScriptsViewProps) {
   const [isGithubSectionOpen, setIsGithubSectionOpen] = useState(false);
   const [isScriptsSectionOpen, setIsScriptsSectionOpen] = useState(true);
   const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
+  const role = user?.role ?? 'viewer';
+  const canManageScripts = role === 'superadmin';
+  const canRunScripts = role === 'superadmin' || role === 'admin';
 
   useEffect(() => {
-    if (isAdmin) {
+    if (canManageScripts || canRunScripts) {
       loadScripts();
     } else {
       setIsLoading(false);
     }
-  }, [isAdmin]);
+  }, [canManageScripts, canRunScripts]);
 
   const loadScripts = async () => {
+    if (!canManageScripts && !canRunScripts) {
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
     try {
-      const data = await scriptsAPI.list();
+      const data = canManageScripts ? await scriptsAPI.list() : await scriptsAPI.myScripts();
       setScripts(data);
     } catch (err: any) {
       setError(err.message || 'Unable to load scripts');
@@ -60,8 +67,8 @@ export function ScriptsView({ darkMode }: ScriptsViewProps) {
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!isAdmin) {
-      setError("Seuls les administrateurs peuvent créer des scripts.");
+    if (!canManageScripts) {
+      setError("Seuls les superadmins peuvent créer des scripts.");
       return;
     }
     if (!formState.name || !formState.source_code) {
@@ -99,8 +106,8 @@ export function ScriptsView({ darkMode }: ScriptsViewProps) {
   };
 
   const handleRunScript = async (scriptId: number) => {
-    if (!isAdmin) {
-      setError("Seuls les administrateurs peuvent exécuter les scripts.");
+    if (!canRunScripts) {
+      setError("Seuls les admins ou superadmins peuvent exécuter des scripts.");
       return;
     }
     const target = (runTargets[scriptId] || '').trim();
@@ -122,8 +129,8 @@ export function ScriptsView({ darkMode }: ScriptsViewProps) {
   };
 
   const handleApprove = async (scriptId: number, approved: boolean) => {
-    if (!isAdmin) {
-      setError("Seuls les administrateurs peuvent approuver des scripts.");
+    if (!canManageScripts) {
+      setError("Seuls les superadmins peuvent approuver des scripts.");
       return;
     }
     setError(null);
@@ -138,8 +145,8 @@ export function ScriptsView({ darkMode }: ScriptsViewProps) {
   };
 
   const handleUninstallFromAll = async (scriptId: number, scriptName: string) => {
-    if (!isAdmin) {
-      setError("Seuls les administrateurs peuvent désinstaller des scripts.");
+    if (!canManageScripts) {
+      setError("Seuls les superadmins peuvent désinstaller des scripts.");
       return;
     }
 
@@ -160,8 +167,8 @@ export function ScriptsView({ darkMode }: ScriptsViewProps) {
 
   const handleGitHubImport = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!isAdmin) {
-      setError("Seuls les administrateurs peuvent importer depuis GitHub.");
+    if (!canManageScripts) {
+      setError("Seuls les superadmins peuvent importer depuis GitHub.");
       return;
     }
     if (!githubForm.repo_url) {
@@ -192,13 +199,15 @@ export function ScriptsView({ darkMode }: ScriptsViewProps) {
           <div>
             <h2 className={`text-lg font-semibold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>Gestion des Scripts</h2>
             <p className={`text-sm ${darkMode ? 'text-slate-400' : 'text-gray-600'}`}>
-              {isAdmin
+              {canManageScripts
                 ? 'Créer, gérer et approuver des scripts d\'analyse. Les scripts approuvés apparaissent dans le Marketplace pour tous les utilisateurs.'
-                : "Vous n'avez pas les permissions nécessaires pour gérer les scripts. Rendez-vous dans Marketplace pour installer des scripts."}
+                : canRunScripts
+                ? "Vous pouvez exécuter les scripts approuvés installés via le Marketplace ou affectés par un superadmin."
+                : "Vous n'avez pas les permissions nécessaires pour gérer ou exécuter des scripts. Rendez-vous dans Marketplace pour en consulter la liste."}
             </p>
           </div>
 
-          {isAdmin ? (
+          {canManageScripts ? (
             <>
               <form className="space-y-4" onSubmit={handleSubmit}>
               <div className="grid gap-4 md:grid-cols-2">
@@ -396,7 +405,9 @@ export function ScriptsView({ darkMode }: ScriptsViewProps) {
                 darkMode ? 'border-slate-800 bg-slate-900 text-slate-200' : 'border-gray-200 bg-gray-50 text-gray-800'
               }`}
             >
-              Vous visualisez le catalogue uniquement. Les scripts sont installés/achetés par les administrateurs.
+              {canRunScripts
+                ? "Gestion réservée aux superadmins. Installez vos scripts via le Marketplace, puis utilisez les formulaires ci-dessous pour les exécuter."
+                : "Vous visualisez le catalogue en lecture seule. Demandez à un superadmin pour faire exécuter un script si nécessaire."}
             </div>
           )}
         </CardContent>
@@ -425,7 +436,11 @@ export function ScriptsView({ darkMode }: ScriptsViewProps) {
                 darkMode ? 'border-slate-800 text-slate-400' : 'border-gray-200 text-gray-600'
               }`}
             >
-              Aucun script pour le moment. Commencez par en créer un ci-dessus.
+              {canManageScripts
+                ? 'Aucun script pour le moment. Commencez par en créer un ci-dessus.'
+                : canRunScripts
+                ? 'Aucun script installé pour votre profil. Installez-en via le Marketplace.'
+                : 'Aucun script disponible pour votre profil.'}
             </div>
           ) : (
             <div className="space-y-4">
@@ -438,6 +453,20 @@ export function ScriptsView({ darkMode }: ScriptsViewProps) {
                     const runnable = script.language === 'python';
                     const requirementCount =
                       script.requirements?.split(/\r?\n/).filter((line) => line.trim().length > 0).length ?? 0;
+                    const canExecute = canRunScripts && runnable;
+                    const runDisabled = runningScriptId === script.id || !canExecute;
+                    const runLabel = runningScriptId === script.id
+                      ? 'Execution...'
+                      : !canRunScripts
+                      ? 'Accès restreint'
+                      : runnable
+                      ? 'Exécuter'
+                      : 'Langage non supporté';
+                    const runTitle = !canRunScripts
+                      ? "Exécution réservée aux admins/superadmins."
+                      : !runnable
+                      ? "Seuls les scripts Python sont supportés."
+                      : undefined;
                     return (
                       <>
                   <div className="flex flex-wrap items-center gap-2">
@@ -462,7 +491,7 @@ export function ScriptsView({ darkMode }: ScriptsViewProps) {
                       {new Date(script.created_at_utc).toLocaleString()}
                     </span>
                     <div className="ml-auto flex gap-2">
-                      {isAdmin && (
+                      {canManageScripts && (
                         <Button
                           className={`h-7 border px-2 text-xs ${
                             script.is_approved
@@ -478,7 +507,7 @@ export function ScriptsView({ darkMode }: ScriptsViewProps) {
                           {script.is_approved ? 'Retirer du marketplace' : 'Approuver pour marketplace'}
                         </Button>
                       )}
-                      {isAdmin && (
+                      {canManageScripts && (
                         <Button
                           className={`h-7 border px-2 text-xs ${
                             darkMode
@@ -530,26 +559,35 @@ export function ScriptsView({ darkMode }: ScriptsViewProps) {
                           }))
                         }
                         placeholder="ex: demo_evidence_001"
+                        disabled={!canRunScripts}
+                        title={!canRunScripts ? "Profil sans accès exécution." : undefined}
                       />
                     </div>
                     <Button
                       className={`mt-2 w-full md:mt-6 md:w-auto ${
-                        runningScriptId === script.id || !runnable
+                        runDisabled
                           ? 'opacity-70 cursor-not-allowed'
                           : darkMode
                           ? 'border-emerald-600/30 bg-emerald-950/40 text-emerald-200 hover:bg-emerald-900/30'
                           : 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
                       }`}
                       onClick={() => handleRunScript(script.id)}
-                      disabled={runningScriptId === script.id || !runnable}
+                      disabled={runDisabled}
+                      title={runTitle}
                     >
-                      {runningScriptId === script.id ? 'Execution...' : runnable ? 'Exécuter' : 'Langage non supporté'}
+                      {runLabel}
                     </Button>
                   </div>
-                  {!runnable && (
+                  {!canRunScripts ? (
                     <p className={`text-[11px] ${darkMode ? 'text-slate-500' : 'text-gray-600'}`}>
-                      L'exécution automatique n'est disponible que pour les scripts Python pour le moment.
+                      Exécution réservée aux admins et superadmins.
                     </p>
+                  ) : (
+                    !runnable && (
+                      <p className={`text-[11px] ${darkMode ? 'text-slate-500' : 'text-gray-600'}`}>
+                        L'exécution automatique n'est disponible que pour les scripts Python pour le moment.
+                      </p>
+                    )
                   )}
                       </>
                     );

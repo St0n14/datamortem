@@ -6,7 +6,7 @@ Usage:
     DM_ADMIN_USER=admin DM_ADMIN_PASS=admin123 python scripts/demo_data.py \
         --case-id demo_case \
         --evidence demo_evidence \
-        --events 5000
+        --events 500000000
 """
 import argparse
 import os
@@ -31,7 +31,7 @@ def parse_args():
                         help="Note to attach to the case")
     parser.add_argument("--evidence-uid", default="demo_evidence",
                         help="Evidence UID to create/use")
-    parser.add_argument("--events", type=int, default=2000,
+    parser.add_argument("--events", type=int, default=2_000_000,
                         help="Number of synthetic events to ingest")
     parser.add_argument("--chunk-size", type=int, default=500,
                         help="Batch size for /api/events/ingest")

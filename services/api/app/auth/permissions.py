@@ -6,11 +6,37 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from ..models import Case, Evidence, TaskRun, User
+from .roles import (
+    ROLE_SUPERADMIN,
+    ROLE_ADMIN,
+    ROLE_ANALYST,
+)
+
+
+def is_superadmin_user(user: User) -> bool:
+    """Return True if the user can perform full system management actions."""
+    return bool(user.is_superuser or user.role == ROLE_SUPERADMIN)
 
 
 def is_admin_user(user: User) -> bool:
-    """Return True if the user has administrative privileges."""
-    return bool(user.is_superuser or user.role == "admin")
+    """Return True if the user has advanced data-access permissions."""
+    return bool(is_superadmin_user(user) or user.role == ROLE_ADMIN)
+
+
+def has_write_permissions(user: User) -> bool:
+    """Return True if the user can create/update/delete cases, evidences, or run jobs."""
+    if is_superadmin_user(user) or user.role in (ROLE_ADMIN, ROLE_ANALYST):
+        return True
+    return False
+
+
+def ensure_has_write_permissions(user: User):
+    """Ensure the user is not read-only."""
+    if not has_write_permissions(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Operation requires write permissions",
+        )
 
 
 def ensure_case_access(case: Case | None, user: User) -> Case:

@@ -17,6 +17,16 @@ class Settings(BaseSettings):
 
     dm_celery_broker: str = "memory://"
     dm_celery_backend: str = "rpc://"
+    dm_enable_email_verification: bool = False
+    dm_email_verification_base_url: str = "http://localhost:5174/verify-email"
+    dm_smtp_host: Optional[str] = None
+    dm_smtp_port: int = 587
+    dm_smtp_username: Optional[str] = None
+    dm_smtp_password: Optional[str] = None
+    dm_smtp_use_tls: bool = True
+    dm_email_sender: Optional[str] = None
+    dm_enable_otp: bool = False
+    dm_otp_issuer: str = "dataMortem"
 
     # OpenSearch Configuration
     dm_opensearch_host: str = "localhost"
@@ -35,6 +45,13 @@ class Settings(BaseSettings):
     dm_opensearch_max_retries: int = 3
 
     dm_jwt_secret: Optional[str] = None
+
+    # HedgeDoc integration
+    dm_hedgedoc_enabled: bool = False
+    dm_hedgedoc_base_url: Optional[str] = None
+    dm_hedgedoc_public_url: Optional[str] = None
+    dm_hedgedoc_slug_length: int = 32
+    dm_hedgedoc_bootstrap_timeout: int = 5
 
     @model_validator(mode="after")
     def validate_non_default_urls(self) -> "Settings":
@@ -60,6 +77,23 @@ class Settings(BaseSettings):
                 "dm_jwt_secret must be set to a random string with at least 32 characters. "
                 "Update your environment (.env) before starting the API."
             )
+        return self
+
+    @model_validator(mode="after")
+    def validate_email_settings(self) -> "Settings":
+        if self.dm_enable_email_verification:
+            if not self.dm_smtp_host:
+                raise ValueError("SMTP host must be configured when email verification is enabled.")
+            if not (self.dm_email_sender or self.dm_smtp_username):
+                raise ValueError(
+                    "Configure dm_email_sender or dm_smtp_username when email verification is enabled."
+                )
+        return self
+
+    @model_validator(mode="after")
+    def validate_hedgedoc_settings(self) -> "Settings":
+        if self.dm_hedgedoc_enabled and not self.dm_hedgedoc_base_url:
+            raise ValueError("dm_hedgedoc_base_url must be set when HedgeDoc integration is enabled.")
         return self
 
     @field_validator("dm_allowed_origins", mode="before")
@@ -101,6 +135,16 @@ class Settings(BaseSettings):
     def opensearch_url(self) -> str:
         """Construit l'URL complète OpenSearch"""
         return f"{self.dm_opensearch_scheme}://{self.dm_opensearch_host}:{self.dm_opensearch_port}"
+
+    @field_validator("dm_hedgedoc_slug_length")
+    @classmethod
+    def ensure_min_slug_length(cls, v: int) -> int:
+        return max(16, v)
+
+    @field_validator("dm_hedgedoc_bootstrap_timeout")
+    @classmethod
+    def ensure_positive_timeout(cls, v: int) -> int:
+        return max(1, v)
 
 
 settings = Settings()

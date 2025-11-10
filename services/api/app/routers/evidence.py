@@ -13,6 +13,7 @@ from ..auth.dependencies import get_current_active_user
 from ..auth.permissions import (
     ensure_case_access,
     ensure_case_access_by_id,
+    ensure_has_write_permissions,
     get_accessible_case_ids,
     is_admin_user,
 )
@@ -95,6 +96,7 @@ def create_evidence(
     Déclare une nouvelle evidence dans une investigation.
     (Requires authentication)
     """
+    ensure_has_write_permissions(current_user)
 
     # 1. Vérifier que la case existe
     parent_case = (
@@ -177,6 +179,7 @@ async def upload_evidence(
     Le ZIP sera conservé tel quel pour parsing ultérieur avec dissect.
     (Requires authentication)
     """
+    ensure_has_write_permissions(current_user)
 
     # 1. Vérifier que la case existe
     parent_case = db.query(Case).filter_by(case_id=case_id).first()

@@ -7,7 +7,7 @@ set -e
 # Default values (can be overridden via environment variables)
 CASE_ID="${DEMO_CASE:-demo_case}"
 EVIDENCE_UID="${DEMO_EVIDENCE:-demo_evidence}"
-EVENTS="${DEMO_EVENTS:-2000}"
+EVENTS="${DEMO_EVENTS:-200000}"
 ADMIN_USER="${ADMIN_USER:-admin}"
 ADMIN_PASS="${ADMIN_PASS:-admin123}"
 BASE_URL="${DM_API_BASE_URL:-http://localhost:8080}"

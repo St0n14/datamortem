@@ -12,7 +12,7 @@ J'ai implémenté un système d'authentification complet basé sur JWT pour séc
 - username (unique)  
 - hashed_password (bcrypt)
 - full_name
-- role (admin, analyst, viewer)
+- role (superadmin, admin, analyst, viewer)
 - is_active, is_superuser
 - created_at_utc, last_login_utc
 - Relation 1:N avec Case (owner)
@@ -39,14 +39,15 @@ J'ai implémenté un système d'authentification complet basé sur JWT pour séc
 - `POST /api/auth/login` - Connexion
 - `GET /api/auth/me` - Info utilisateur actuel
 - `POST /api/auth/change-password` - Changer mot de passe
-- `GET /api/auth/users` - Liste des users (admin)
-- `DELETE /api/auth/users/{id}` - Supprimer user (admin)
+- `GET /api/auth/users` - Liste des users (superadmin)
+- `DELETE /api/auth/users/{id}` - Supprimer user (superadmin)
 
 ### 4. Middlewares & Dépendances
 ✅ **Dépendances FastAPI** (`services/api/app/auth/dependencies.py`)
 - `get_current_user()` - Obtenir l'utilisateur depuis le token
 - `get_current_active_user()` - User actif
-- `get_current_admin_user()` - Vérifier role admin
+- `get_current_admin_user()` - Vérifier role admin/superadmin (accès data)
+- `get_current_superadmin_user()` - Permissions système complètes
 - `get_optional_user()` - User optionnel (routes publiques/privées)
 
 ### 5. Schémas Pydantic
@@ -116,7 +117,7 @@ docker-compose.yml           # +DM_JWT_SECRET env var
 | Password hashing | ✅ | Bcrypt avec salt auto |
 | JWT tokens | ✅ | HS256, 24h expiration |
 | Protected endpoints | ✅ | Via dependencies |
-| RBAC | ✅ | admin, analyst, viewer |
+| RBAC | ✅ | superadmin, admin, analyst, viewer |
 | Email validation | ✅ | Pydantic EmailStr |
 | Password complexity | ✅ | Min 8 chars (extensible) |
 | Unique constraints | ✅ | email, username |
@@ -258,4 +259,3 @@ Ouvrir http://localhost:8080/docs pour tester interactivement
 Phase 1 complète ! Vous avez maintenant un système d'authentification solide. 
 
 **Prochaine étape recommandée**: Setup Alembic et création de la première migration.
-

@@ -2,8 +2,9 @@
 Search router for OpenSearch API endpoints.
 """
 
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends
 from typing import Optional
+from sqlalchemy.orm import Session
 from ..schemas.opensearch_schemas import (
     SearchRequest,
     SearchResponse,
@@ -25,7 +26,9 @@ from ..opensearch.search import (
 )
 from ..config import settings
 from ..models import User
-from ..auth.dependencies import get_current_active_user, get_current_admin_user
+from ..auth.dependencies import get_current_active_user, get_current_superadmin_user
+from ..auth.permissions import ensure_case_access_by_id, get_accessible_case_ids
+from ..db import get_db
 import logging
 
 logger = logging.getLogger(__name__)
@@ -42,7 +45,8 @@ def get_opensearch_client_dep():
 def search_case_events(
     req: SearchRequest,
     client=Depends(get_opensearch_client_dep),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ):
     """
     Recherche dans les événements d'un case.
@@ -59,9 +63,9 @@ def search_case_events(
     - `file.name:cmd.exe AND process.pid:>1000` - Recherche avec filtres
     - `"malicious activity"` - Phrase exacte
     """
+    ensure_case_access_by_id(req.case_id, current_user, db)
     index_name = get_index_name(req.case_id)
 
-    # Vérifie que l'index existe
     if not client.indices.exists(index=index_name):
         raise HTTPException(
             status_code=404,
@@ -102,7 +106,8 @@ def search_case_events(
 def aggregate_case_field(
     req: AggregationRequest,
     client=Depends(get_opensearch_client_dep),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ):
     """
     Agrégation terms sur un champ.
@@ -115,6 +120,7 @@ def aggregate_case_field(
     - `file.extension` - Top file extensions
     - `user.name` - Top users
     """
+    ensure_case_access_by_id(req.case_id, current_user, db)
     index_name = get_index_name(req.case_id)
 
     if not client.indices.exists(index=index_name):
@@ -163,7 +169,8 @@ def aggregate_case_field(
 def get_case_timeline(
     req: TimelineRequest,
     client=Depends(get_opensearch_client_dep),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ):
     """
     Agrégation temporelle pour générer une timeline.
@@ -176,6 +183,7 @@ def get_case_timeline(
     - `1h` - 1 heure
     - `1d` - 1 jour
     """
+    ensure_case_access_by_id(req.case_id, current_user, db)
     index_name = get_index_name(req.case_id)
 
     if not client.indices.exists(index=index_name):
@@ -227,7 +235,8 @@ def get_case_timeline(
 def get_case_index_stats(
     case_id: str,
     client=Depends(get_opensearch_client_dep),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ):
     """
     Récupère les statistiques de l'index d'un case. (Requires authentication)
@@ -237,6 +246,7 @@ def get_case_index_stats(
     - Taille de l'index
     - Configuration (shards, replicas)
     """
+    ensure_case_access_by_id(case_id, current_user, db)
     index_name = get_index_name(case_id)
 
     if not client.indices.exists(index=index_name):
@@ -269,7 +279,7 @@ def get_case_index_stats(
 @router.get("/health")
 def opensearch_health(
     client=Depends(get_opensearch_client_dep),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_superadmin_user),
 ):
     """
     Vérifie la santé de la connexion OpenSearch.

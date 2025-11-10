@@ -12,6 +12,8 @@ import random
 import string
 import time
 from datetime import datetime, timedelta
+import secrets
+from typing import Optional
 
 import requests
 
@@ -34,6 +36,8 @@ def parse_args():
                         help="Number of events to ingest")
     parser.add_argument("--cleanup", action="store_true",
                         help="Delete test case after test")
+    parser.add_argument("--rbac-check", action="store_true",
+                        help="Ensure unauthorized users cannot query other cases")
     return parser.parse_args()
 
 
@@ -185,6 +189,73 @@ def delete_case(base_url: str, token: str, case_id: str):
         print(f"[✗] Failed to delete case: {resp.status_code}")
 
 
+def register_user(base_url: str, username: str, email: str, password: str, full_name: Optional[str] = None):
+    """Register a new user (idempotent)."""
+    payload = {
+        "email": email,
+        "username": username,
+        "password": password,
+        "full_name": full_name or "RBAC Test User",
+    }
+    resp = requests.post(
+        f"{base_url}/api/auth/register",
+        json=payload,
+        timeout=10,
+    )
+    if resp.status_code == 400 and "already" in resp.text.lower():
+        print(f"[i] User '{username}' already exists, reusing.")
+        return
+    resp.raise_for_status()
+    print(f"[+] User '{username}' registered.")
+
+
+def assert_opensearch_forbidden(base_url: str, token: str, case_id: str):
+    """Verify OpenSearch endpoints deny access to foreign cases."""
+    headers = {"Authorization": f"Bearer {token}"}
+    timeline_payload = {
+        "case_id": case_id,
+        "interval": "1h",
+        "query": "*",
+        "filters": None,
+        "field_filters": [],
+        "time_range": None,
+    }
+    resp = requests.post(
+        f"{base_url}/api/search/timeline",
+        json=timeline_payload,
+        headers=headers,
+        timeout=10,
+    )
+    if resp.status_code != 403:
+        raise AssertionError(
+            f"Timeline RBAC broken: expected 403, got {resp.status_code}: {resp.text}"
+        )
+    print("[✓] Timeline RBAC enforced (403).")
+
+    search_payload = {
+        "case_id": case_id,
+        "query": "*",
+        "from": 0,
+        "size": 5,
+        "sort_by": "@timestamp",
+        "sort_order": "desc",
+        "filters": None,
+        "field_filters": [],
+        "time_range": None,
+    }
+    resp = requests.post(
+        f"{base_url}/api/search/query",
+        json=search_payload,
+        headers=headers,
+        timeout=10,
+    )
+    if resp.status_code != 403:
+        raise AssertionError(
+            f"Search RBAC broken: expected 403, got {resp.status_code}: {resp.text}"
+        )
+    print("[✓] Search RBAC enforced (403).")
+
+
 def main():
     args = parse_args()
 
@@ -248,9 +319,20 @@ def main():
         if os_count != args.events:
             print(f"   OpenSearch: attendu {args.events}, trouvé {os_count}")
 
+    # 6. RBAC check
+    if args.rbac_check:
+        print("\n[6] RBAC verification...")
+        suffix = secrets.token_hex(4)
+        rogue_user = f"rbac_{suffix}"
+        rogue_pass = f"Rbac!{suffix}"
+        rogue_email = f"{rogue_user}@example.com"
+        register_user(args.base_url, rogue_user, rogue_email, rogue_pass)
+        rogue_token = login(args.base_url, rogue_user, rogue_pass)
+        assert_opensearch_forbidden(args.base_url, rogue_token, args.case_id)
+
     # Cleanup
     if args.cleanup:
-        print(f"\n[6] Cleanup...")
+        print(f"\n[cleanup] Removing test case...")
         delete_case(args.base_url, token, args.case_id)
 
     print("=" * 60)

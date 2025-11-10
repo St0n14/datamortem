@@ -10,6 +10,7 @@ from ..models import AnalysisModule, TaskRun, Evidence, User
 from ..auth.dependencies import get_current_active_user, get_current_admin_user
 from ..auth.permissions import (
     ensure_evidence_access_by_uid,
+    ensure_has_write_permissions,
     ensure_task_run_access,
     get_accessible_case_ids,
     is_admin_user,
@@ -199,6 +200,8 @@ def run_pipeline_module(
     Le module DOIT exister en DB (analysis_modules) et être enabled.
     """
 
+    ensure_has_write_permissions(current_user)
+
     evidence_uid = payload.evidence_uid
     module_id = payload.module_id
 
@@ -275,6 +278,8 @@ def run_all_pipeline(
     Optionnel : lance TOUS les modules enabled pour une evidence donnée.
     Renvoie la liste des TaskRuns créés.
     """
+
+    ensure_has_write_permissions(current_user)
 
     ev = db.query(Evidence).filter_by(evidence_uid=evidence_uid).one_or_none()
     if not ev:
@@ -356,6 +361,8 @@ def kill_run(
     NOTE: avec Celery en mode eager (dev), ça ne tue rien en vrai,
     mais on prépare déjà l'API pour plus tard.
     """
+
+    ensure_has_write_permissions(current_user)
 
     run = db.query(TaskRun).filter_by(id=task_run_id).one_or_none()
     if not run:

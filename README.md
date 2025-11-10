@@ -36,6 +36,17 @@ npm install
 npm run dev
 ```
 
+### Prise de notes HedgeDoc
+
+- `docker-compose` embarque désormais un service `hedgedoc` (accessible sur http://localhost:3000) et sa base Postgres dédiée.
+- L'API FastAPI crée automatiquement un pad HedgeDoc pour chaque nouveau case (slug aléatoire) et renvoie l'URL via le champ `hedgedoc_url`.
+- Les variables suivantes peuvent être ajustées si vous avez déjà un HedgeDoc externe :
+  - `DM_HEDGEDOC_ENABLED` (par défaut `true` en local)
+  - `DM_HEDGEDOC_BASE_URL` (URL interne utilisée par l'API, ex. `http://hedgedoc:3000`)
+  - `DM_HEDGEDOC_PUBLIC_URL` (URL partagée avec les utilisateurs, ex. `http://localhost:3000`)
+
+Les notes sont pré-créées côté serveur afin d'être immédiatement disponibles lorsque l'utilisateur clique sur le bouton "Ouvrir dans HedgeDoc".
+
 ## Tests
 
 ```bash

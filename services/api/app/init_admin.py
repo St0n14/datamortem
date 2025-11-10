@@ -5,6 +5,7 @@ Run this script after database migrations to create the default administrator.
 from app.db import SessionLocal
 from app.models import User
 from app.auth.security import get_password_hash
+from app.auth.roles import ROLE_SUPERADMIN
 
 
 def create_default_admin():
@@ -26,7 +27,7 @@ def create_default_admin():
             username="admin",
             hashed_password=get_password_hash("admin123"),
             full_name="Default Administrator",
-            role="admin",
+            role=ROLE_SUPERADMIN,
             is_active=True,
             is_superuser=True,
         )

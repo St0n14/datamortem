@@ -13,6 +13,9 @@ import type {
   Script,
   ScriptSummary,
   Rule,
+  UserAccount,
+  UserRole,
+  AdminStats,
 } from '../types';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) || 'http://localhost:8080/api';
@@ -60,7 +63,20 @@ async function fetchAPI<T>(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
-    throw new Error(error.detail || `HTTP ${response.status}`);
+    const detail = error?.detail;
+    let message: string;
+    if (typeof detail === 'string') {
+      message = detail;
+    } else if (Array.isArray(detail)) {
+      message = detail
+        .map((item) => item?.msg || item?.detail || JSON.stringify(item))
+        .join(', ');
+    } else if (detail?.msg) {
+      message = detail.msg;
+    } else {
+      message = `HTTP ${response.status}`;
+    }
+    throw new Error(message || `HTTP ${response.status}`);
   }
 
   return response.json();
@@ -271,6 +287,26 @@ export const scriptsAPI = {
     }),
 };
 
+export const adminAPI = {
+  listUsers: () => fetchAPI<UserAccount[]>('/auth/users'),
+  deleteUser: (userId: number) =>
+    fetchAPI<{ message: string }>(`/auth/users/${userId}`, {
+      method: 'DELETE',
+    }),
+  createUser: (data: {
+    email: string;
+    username: string;
+    full_name?: string;
+    role: UserRole;
+    password: string;
+  }) =>
+    fetchAPI<UserAccount>('/auth/users', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getStats: () => fetchAPI<AdminStats>('/admin/stats'),
+};
+
 // Rules API
 export const rulesAPI = {
   list: () => fetchAPI<Rule[]>('/rules'),
@@ -305,4 +341,47 @@ export interface SystemStatus {
 
 export const healthAPI = {
   getStatus: () => fetchAPI<SystemStatus>('/health/status'),
+};
+
+// Auth helper endpoints
+export const authAPI = {
+  register: (data: { email: string; username: string; password: string; full_name?: string }) =>
+    fetchAPI<UserAccount>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  resendVerification: (email: string) =>
+    fetchAPI<{ message: string }>('/auth/resend-verification', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
+  verifyEmail: (token: string) =>
+    fetchAPI<{ message: string }>('/auth/verify-email', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    }),
+  otpSetup: () =>
+    fetchAPI<{ secret: string; otpauth_url: string }>('/auth/otp/setup', {
+      method: 'POST',
+    }),
+  otpActivate: (code: string) =>
+    fetchAPI<{ message: string }>('/auth/otp/activate', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    }),
+  otpDisable: (code: string) =>
+    fetchAPI<{ message: string }>('/auth/otp/disable', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    }),
+  updateProfile: (data: { email?: string; username?: string; full_name?: string }) =>
+    fetchAPI<UserAccount>('/auth/me', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  changePassword: (data: { current_password: string; new_password: string }) =>
+    fetchAPI<{ message: string }>('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 };

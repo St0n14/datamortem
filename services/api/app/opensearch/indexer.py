@@ -5,13 +5,52 @@ Handles bulk indexing of parser results from Parquet/CSV files.
 """
 
 from opensearchpy import OpenSearch, helpers
-from typing import List, Dict, Iterator, Optional
+from typing import List, Dict, Iterator, Optional, Any
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 import os
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_timestamp(value: Any) -> str:
+    """
+    Normalize various timestamp formats to ISO 8601 (UTC).
+    Falls back to current UTC time when parsing fails.
+    """
+    def now_iso():
+        return datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
+
+    if value is None:
+        return now_iso()
+
+    if isinstance(value, datetime):
+        ts = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return ts.astimezone(timezone.utc).isoformat()
+
+    if isinstance(value, (int, float)):
+        try:
+            ts = datetime.fromtimestamp(value, tz=timezone.utc)
+            return ts.isoformat()
+        except Exception:
+            return now_iso()
+
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return now_iso()
+        try:
+            if raw.endswith("Z") and "+" not in raw:
+                raw = raw[:-1] + "+00:00"
+            parsed = datetime.fromisoformat(raw)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed.astimezone(timezone.utc).isoformat()
+        except Exception:
+            return now_iso()
+
+    return now_iso()
 
 
 def index_parquet_results(
@@ -406,9 +445,14 @@ def index_events_batch(
     def generate_docs() -> Iterator[Dict]:
         for idx, event in enumerate(events):
             try:
-                # Crée le document OpenSearch
+                raw_timestamp = (
+                    event.get("ts")
+                    or event.get("@timestamp")
+                    or event.get("timestamp")
+                    or event.get("time")
+                )
                 doc = {
-                    "@timestamp": event.get("ts"),
+                    "@timestamp": _normalize_timestamp(raw_timestamp),
                     "case": {"id": case_id},
                     "evidence": {"uid": event.get("evidence_uid")},
                     "source": {"parser": event.get("source", "api_ingest")},
@@ -418,7 +462,7 @@ def index_events_batch(
                     "message": event.get("message"),
                     "tags": event.get("tags", []),
                     "score": event.get("score"),
-                    "indexed_at": datetime.utcnow().isoformat()
+                    "indexed_at": datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
                 }
 
                 if case_name:

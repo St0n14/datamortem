@@ -8,6 +8,7 @@ import { ExplorerView } from "./views/ExplorerView";
 import { ScriptsView } from "./views/ScriptsView";
 import { MarketplaceView } from "./views/MarketplaceView";
 import { RulesView } from "./views/RulesView";
+import { SuperAdminView } from "./views/SuperAdminView";
 import { Sidebar } from "./components/layout/Sidebar";
 import { EventInspector } from "./components/layout/EventInspector";
 import { CaseIndexingSummary } from "./components/CaseIndexingSummary";
@@ -17,7 +18,7 @@ import { TimelineCard } from "./components/timeline/TimelineCard";
 import { EventsTable } from "./components/timeline/EventsTable";
 import { casesAPI, searchAPI, indexingAPI } from "./services/api";
 import type { CaseIndexSummary } from "./types";
-
+import { EmailVerificationView } from "./views/EmailVerificationView";
 import { Card, CardContent } from "./components/ui/Card";
 
 type EventRow = {
@@ -36,6 +37,7 @@ type CaseSummary = {
   status?: string;
   note?: string | null;
   created_at_utc?: string;
+  hedgedoc_url?: string | null;
 };
 
 type TimelineBucket = {
@@ -49,7 +51,7 @@ function AuthenticatedApp() {
   const [darkMode, setDarkMode] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeTab, setActiveTab] =
-    useState<"timeline" | "pipeline" | "rules" | "evidences" | "explorer" | "scripts" | "marketplace">("timeline");
+    useState<"timeline" | "pipeline" | "rules" | "evidences" | "explorer" | "scripts" | "marketplace" | "admin">("timeline");
 
   // Load current case from localStorage or use default
   const [currentCaseId, setCurrentCaseId] = useState<string>(() => {
@@ -70,6 +72,8 @@ function AuthenticatedApp() {
   const [caseSummary, setCaseSummary] = useState<CaseIndexSummary | null>(null);
   const [caseSummaryLoading, setCaseSummaryLoading] = useState(false);
   const [caseSummaryError, setCaseSummaryError] = useState<string | null>(null);
+  const userRole = user?.role;
+  const isSuperAdmin = userRole === "superadmin";
 
   // Initialize dark mode class on mount
   useEffect(() => {
@@ -91,6 +95,12 @@ function AuthenticatedApp() {
     loadEventsFromOpenSearch();
     loadTimelineFromOpenSearch();
   }, [currentCaseId]);
+
+  useEffect(() => {
+    if (isSuperAdmin && activeTab === "explorer") {
+      setActiveTab("admin");
+    }
+  }, [isSuperAdmin, activeTab]);
 
   useEffect(() => {
     if (!currentCaseId) {
@@ -231,6 +241,19 @@ function AuthenticatedApp() {
     }
   };
 
+  const handleAddEventTag = (eventId: number, tag: string) => {
+    setEvents((prev) =>
+      prev.map((event) =>
+        event.id === eventId
+          ? {
+              ...event,
+              tags: Array.isArray(event.tags) ? [...event.tags, tag] : [tag],
+            }
+          : event
+      )
+    );
+  };
+
   const bgApp = darkMode ? "bg-slate-950 text-slate-50" : "bg-slate-50 text-slate-900";
 
   return (
@@ -253,13 +276,10 @@ function AuthenticatedApp() {
         <Header darkMode={darkMode} onToggleTheme={() => setDarkMode((prev) => !prev)} />
         <main className={`flex flex-1 min-w-0 flex-col gap-4 overflow-auto p-4 ${darkMode ? "bg-slate-950" : "bg-slate-100"}`}>
           {(!cases.length || !currentCaseId) && activeTab !== "evidences" ? (
-            <EmptyCaseView
-              darkMode={darkMode}
-              onGoToEvidences={() => setActiveTab("evidences")}
-            />
+            <EmptyCaseView darkMode={darkMode} onGoToEvidences={() => setActiveTab("evidences")} />
           ) : (
-            <>
-              <section className="flex flex-col flex-[2] min-w-0 min-h-0 gap-4">
+            <div className="flex flex-1 gap-4">
+              <section className="flex flex-col flex-[2] min-h-0 min-w-0 gap-4">
                 <CaseIndexingSummary
                   darkMode={darkMode}
                   currentCaseId={currentCaseId}
@@ -269,88 +289,80 @@ function AuthenticatedApp() {
                 />
 
                 {activeTab === "timeline" && (
-            <>
-              <TimelineSearchBar
+                  <>
+                    <TimelineSearchBar
+                      darkMode={darkMode}
+                      currentCaseId={currentCaseId}
+                      query={query}
+                      onQueryChange={setQuery}
+                      onSearch={handleSearchSubmit}
+                    />
+
+                    <TimelineCard
+                      darkMode={darkMode}
+                      timelineBuckets={timelineBuckets}
+                      timelineInterval={timelineInterval}
+                      timelineLoading={timelineLoading}
+                      timelineError={timelineError}
+                      onIntervalChange={setTimelineInterval}
+                      onRefresh={loadTimelineFromOpenSearch}
+                    />
+
+                    <EventsTable
+                      darkMode={darkMode}
+                      events={events}
+                      selectedEventId={selectedEventId}
+                      onEventSelect={setSelectedEventId}
+                    />
+                  </>
+                )}
+
+                {activeTab === "evidences" && (
+                  <EvidencesView
+                    darkMode={darkMode}
+                    currentCaseId={currentCaseId}
+                    onCaseChange={handleCaseSelect}
+                    onCasesUpdated={refreshCases}
+                  />
+                )}
+
+                {activeTab === "explorer" && <ExplorerView darkMode={darkMode} currentCaseId={currentCaseId} />}
+
+                {activeTab === "pipeline" && (
+                  <Card className={`flex-1 ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-slate-50"}`}>
+                    <CardContent className="p-0">
+                      <PipelineView selectedEvidenceUid={selectedEvidenceUid} darkMode={darkMode} />
+                    </CardContent>
+                  </Card>
+                )}
+
+                {activeTab === "marketplace" && <MarketplaceView darkMode={darkMode} />}
+                {activeTab === "scripts" && <ScriptsView darkMode={darkMode} />}
+                {activeTab === "rules" && <RulesView darkMode={darkMode} />}
+                {activeTab === "admin" && isSuperAdmin && <SuperAdminView darkMode={darkMode} />}
+              </section>
+
+              <EventInspector
                 darkMode={darkMode}
-                currentCaseId={currentCaseId}
-                query={query}
-                onQueryChange={setQuery}
-                onSearch={handleSearchSubmit}
+                selectedEvent={selectedEvent}
+                onClose={() => setSelectedEventId(null)}
+                onAddTag={handleAddEventTag}
               />
-
-              <TimelineCard
-                darkMode={darkMode}
-                timelineBuckets={timelineBuckets}
-                timelineInterval={timelineInterval}
-                timelineLoading={timelineLoading}
-                timelineError={timelineError}
-                onIntervalChange={setTimelineInterval}
-                onRefresh={loadTimelineFromOpenSearch}
-              />
-
-              {/* Events table */}
-              <EventsTable
-                darkMode={darkMode}
-                events={events}
-                selectedEventId={selectedEventId}
-                onEventSelect={setSelectedEventId}
-              />
-            </>
+            </div>
           )}
-
-          {activeTab === "evidences" && (
-            <EvidencesView
-              darkMode={darkMode}
-              currentCaseId={currentCaseId}
-              onCaseChange={handleCaseSelect}
-              onCasesUpdated={refreshCases}
-            />
-          )}
-
-          {activeTab === "explorer" && (
-            <ExplorerView
-              darkMode={darkMode}
-              currentCaseId={currentCaseId}
-            />
-          )}
-
-          {activeTab === "pipeline" && (
-            <Card className={`flex-1 ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-slate-50"}`}>
-              <CardContent className="p-0">
-                <PipelineView selectedEvidenceUid={selectedEvidenceUid} darkMode={darkMode} />
-              </CardContent>
-            </Card>
-          )}
-
-          {activeTab === "marketplace" && (
-            <MarketplaceView darkMode={darkMode} />
-          )}
-
-          {activeTab === "scripts" && (
-            <ScriptsView darkMode={darkMode} />
-          )}
-
-          {activeTab === "rules" && (
-            <RulesView darkMode={darkMode} />
-          )}
-        </section>
-
-        {/* INSPECTOR RIGHT */}
-        <EventInspector
-          darkMode={darkMode}
-          selectedEvent={selectedEvent}
-          onClose={() => setSelectedEventId(null)}
-        />
-              </>
-            )}
         </main>
       </div>
     </div>
   );
 }
 
-// Wrapper component that handles authentication
+// Wrapper component that handles authentication / special routes
 export default function App() {
+  const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
+  if (pathname === "/verify-email") {
+    return <EmailVerificationView />;
+  }
+
   return (
     <AuthProvider>
       <AppContent />

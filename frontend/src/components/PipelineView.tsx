@@ -15,6 +15,7 @@ import { Button } from './ui/Button';
 import { Badge } from './ui/Badge';
 import { indexingAPI, pipelineAPI, scriptsAPI } from '../services/api';
 import type { AnalysisModule, TaskRun, Script } from '../types';
+import { useAuth } from '../contexts/AuthContext';
 
 interface PipelineViewProps {
   selectedEvidenceUid: string | null;
@@ -68,6 +69,11 @@ export function PipelineView({ selectedEvidenceUid, darkMode }: PipelineViewProp
 
   const [scriptError, setScriptError] = useState<string | null>(null);
   const [scriptSuccess, setScriptSuccess] = useState<string | null>(null);
+
+  const { user } = useAuth();
+  const role = user?.role ?? 'viewer';
+  const hasPipelineWriteAccess = role !== 'viewer';
+  const canRunCustomScripts = role === 'superadmin' || role === 'admin';
 
   const textWeak = darkMode ? 'text-slate-500' : 'text-gray-500';
   const textStrong = darkMode ? 'text-slate-100' : 'text-gray-900';
@@ -146,6 +152,10 @@ export function PipelineView({ selectedEvidenceUid, darkMode }: PipelineViewProp
       return;
     }
 
+    if (!hasPipelineWriteAccess) {
+      return;
+    }
+
     try {
       const response = await pipelineAPI.run({
         module_id: moduleId,
@@ -159,6 +169,11 @@ export function PipelineView({ selectedEvidenceUid, darkMode }: PipelineViewProp
   };
 
   const handleRunScript = async (scriptId: number) => {
+    if (!canRunCustomScripts) {
+      setScriptError('Exécution réservée aux admins et superadmins.');
+      return;
+    }
+
     if (!selectedEvidenceUid) {
       setScriptError('Select an evidence before running a script.');
       return;
@@ -181,6 +196,10 @@ export function PipelineView({ selectedEvidenceUid, darkMode }: PipelineViewProp
 
   const handleIndexTaskRun = async (taskRunId: number) => {
     if (!selectedEvidenceUid) {
+      return;
+    }
+
+    if (!hasPipelineWriteAccess) {
       return;
     }
 
@@ -253,19 +272,30 @@ export function PipelineView({ selectedEvidenceUid, darkMode }: PipelineViewProp
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      onClick={() => handleRunModule(module.id)}
-                      disabled={!module.enabled}
-                      className={`h-7 px-3 text-[11px] ${
-                        darkMode
-                          ? 'border-violet-600/30 bg-violet-950/40 text-violet-200 hover:bg-violet-900/30 disabled:opacity-50'
-                          : 'border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100 disabled:opacity-50'
-                      }`}
-                    >
-                      <Play className="mr-1 h-3 w-3" />
-                      Run
-                    </Button>
+                    <div className="flex flex-wrap items-center gap-2">
+                    {(() => {
+                      const moduleDisabled = !module.enabled || !hasPipelineWriteAccess;
+                      const moduleTitle = !hasPipelineWriteAccess
+                        ? 'Profil en lecture seule : exécution désactivée.'
+                        : !module.enabled
+                        ? 'Module désactivé.'
+                        : undefined;
+                      return (
+                        <Button
+                          onClick={() => handleRunModule(module.id)}
+                          disabled={moduleDisabled}
+                          title={moduleTitle}
+                          className={`h-7 px-3 text-[11px] ${
+                            darkMode
+                              ? 'border-violet-600/30 bg-violet-950/40 text-violet-200 hover:bg-violet-900/30'
+                              : 'border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100'
+                          } ${moduleDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        >
+                          <Play className="mr-1 h-3 w-3" />
+                          Run
+                        </Button>
+                      );
+                    })()}
 
                     {lastRun && (
                       <Badge
@@ -324,7 +354,9 @@ export function PipelineView({ selectedEvidenceUid, darkMode }: PipelineViewProp
               My Scripts
             </div>
             <p className={`text-xs ${textWeak}`}>
-              Install scripts from the Marketplace, then launch them here on the selected evidence.
+              {canRunCustomScripts
+                ? 'Install scripts from the Marketplace, then launch them here on the selected evidence.'
+                : 'Script execution is restricted to admin and superadmin roles.'}
             </p>
           </div>
           <div className="space-y-1 text-xs text-right">
@@ -336,7 +368,9 @@ export function PipelineView({ selectedEvidenceUid, darkMode }: PipelineViewProp
           <div className={`mt-3 text-sm ${textWeak}`}>Loading scripts…</div>
         ) : scripts.length === 0 ? (
           <div className={`mt-3 text-sm ${textWeak}`}>
-            No scripts installed yet. Visit the Marketplace tab to install scripts.
+            {canRunCustomScripts
+              ? 'No scripts installed yet. Visit the Marketplace tab to install scripts.'
+              : 'No scripts available for this profile.'}
           </div>
         ) : (
           <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -346,6 +380,15 @@ export function PipelineView({ selectedEvidenceUid, darkMode }: PipelineViewProp
                 ? script.requirements.split(/\r?\n/).filter((line) => line.trim().length > 0)
                 : [];
               const runnable = script.language === 'python';
+              const scriptDisabled =
+                !selectedEvidenceUid || runningScriptId === script.id || !runnable || !canRunCustomScripts;
+              const buttonTitle = !selectedEvidenceUid
+                ? 'Select an evidence first.'
+                : !canRunCustomScripts
+                ? 'Script execution is limited to admin and superadmin roles.'
+                : !runnable
+                ? 'Only Python scripts are supported at the moment.'
+                : undefined;
               return (
                 <div
                   key={script.id}
@@ -383,7 +426,8 @@ export function PipelineView({ selectedEvidenceUid, darkMode }: PipelineViewProp
                 <div className="mt-4 flex flex-wrap items-center gap-2">
                   <Button
                     onClick={() => handleRunScript(script.id)}
-                    disabled={!selectedEvidenceUid || runningScriptId === script.id || !runnable}
+                    disabled={scriptDisabled}
+                    title={buttonTitle}
                     className={`h-8 px-3 text-[11px] ${
                       darkMode
                         ? 'border-violet-600/30 bg-violet-950/40 text-violet-200 hover:bg-violet-900/30 disabled:opacity-50'
@@ -395,6 +439,8 @@ export function PipelineView({ selectedEvidenceUid, darkMode }: PipelineViewProp
                         <Loader className="mr-1 h-3 w-3 animate-spin" />
                         Running…
                       </>
+                    ) : !canRunCustomScripts ? (
+                      <>Access restricted</>
                     ) : runnable ? (
                       <>
                         <Terminal className="mr-1 h-3 w-3" />
@@ -419,7 +465,17 @@ export function PipelineView({ selectedEvidenceUid, darkMode }: PipelineViewProp
                     {requirementPreview.join('\n')}
                   </pre>
                 )}
-                </div>
+                {!canRunCustomScripts && (
+                  <p className={`mt-2 text-[11px] ${textWeak}`}>
+                    Execution reserved for admin and superadmin accounts.
+                  </p>
+                )}
+                {canRunCustomScripts && !runnable && (
+                  <p className={`mt-2 text-[11px] ${textWeak}`}>
+                    L'exécution automatique n'est disponible que pour les scripts Python pour le moment.
+                  </p>
+                )}
+              </div>
               );
             })}
           </div>
@@ -512,12 +568,13 @@ export function PipelineView({ selectedEvidenceUid, darkMode }: PipelineViewProp
                         {run.status === 'success' && !run.indexed && !run.script_id && (
                           <Button
                             onClick={() => handleIndexTaskRun(run.id)}
-                            disabled={indexingTasks.has(run.id)}
+                            disabled={indexingTasks.has(run.id) || !hasPipelineWriteAccess}
+                            title={!hasPipelineWriteAccess ? 'Profil en lecture seule : action indisponible.' : undefined}
                             className={`h-6 px-2 text-[11px] ${
                               darkMode
                                 ? 'border-emerald-600/30 bg-emerald-950/40 text-emerald-200 hover:bg-emerald-900/30'
                                 : 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                            }`}
+                            } ${(indexingTasks.has(run.id) || !hasPipelineWriteAccess) ? 'opacity-50 cursor-not-allowed' : ''}`}
                           >
                             {indexingTasks.has(run.id) ? (
                               <Loader className="h-3 w-3 animate-spin" />

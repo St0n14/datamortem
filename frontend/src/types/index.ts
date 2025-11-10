@@ -1,12 +1,26 @@
 // API Types for dataMortem
 
-export interface Case {
+export type UserRole = 'superadmin' | 'admin' | 'analyst' | 'viewer';
+
+export interface UserAccount {
   id: number;
+  email: string;
+  username: string;
+  full_name?: string | null;
+  role: UserRole;
+  is_active: boolean;
+  email_verified: boolean;
+  otp_enabled: boolean;
+  created_at_utc: string;
+  last_login_utc?: string | null;
+}
+
+export interface Case {
   case_id: string;
   note: string | null;
-  status: 'open' | 'closed' | 'archived';
-  created_at: string;
-  updated_at: string;
+  status: 'open' | 'closed';
+  created_at_utc: string;
+  hedgedoc_url?: string | null;
 }
 
 export interface Evidence {
@@ -132,6 +146,29 @@ export interface ScriptSummary {
   requirements?: string | null;
   is_approved: boolean;
   published_at?: string | null;
+}
+
+export interface ServiceStatusInfo {
+  status: string;
+  message?: string;
+}
+
+export interface AdminStats {
+  users: {
+    total: number;
+    active_last_15m: number;
+  };
+  cases: {
+    total: number;
+    evidences: number;
+  };
+  task_runs: {
+    total: number;
+    running: number;
+    queued: number;
+  };
+  services: Record<string, ServiceStatusInfo>;
+  generated_at: string;
 }
 
 export interface Rule {

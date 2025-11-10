@@ -3,9 +3,10 @@ import { Card, CardContent } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { Input } from "../components/ui/Input";
 import { Badge } from "../components/ui/Badge";
-import { Plus, HardDrive, Trash2, X } from "lucide-react";
+import { Plus, HardDrive, Trash2, X, BookOpen } from "lucide-react";
 import { casesAPI, evidenceAPI } from "../services/api";
 import { useAuth } from "../contexts/AuthContext";
+import type { Case as ApiCase } from "../types";
 
 interface Evidence {
   id: number;
@@ -13,13 +14,6 @@ interface Evidence {
   case_id: string;
   local_path: string | null;
   added_at_utc: string;
-}
-
-interface Case {
-  case_id: string;
-  status: string;
-  created_at_utc: string;
-  note: string | null;
 }
 
 interface EvidencesViewProps {
@@ -31,7 +25,7 @@ interface EvidencesViewProps {
 
 export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUpdated }: EvidencesViewProps) {
   const [evidences, setEvidences] = useState<Evidence[]>([]);
-  const [cases, setCases] = useState<Case[]>([]);
+  const [cases, setCases] = useState<ApiCase[]>([]);
   const [loading, setLoading] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showAddCaseModal, setShowAddCaseModal] = useState(false);
@@ -59,8 +53,14 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
 
   const currentCase = cases.find((c) => c.case_id === currentCaseId);
   const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
-  const canCreateCase = isAdmin || cases.length === 0;
+  const role = user?.role ?? "viewer";
+  const isSuperAdmin = role === "superadmin";
+  const isAdmin = role === "admin";
+  const isAnalyst = role === "analyst";
+  const isViewer = role === "viewer";
+  const canManageCases = !isViewer;
+  const canCreateCase = isSuperAdmin || isAdmin || (isAnalyst && cases.length === 0);
+  const canManageEvidence = canManageCases;
 
   useEffect(() => {
     setCaseNoteDraft(currentCase?.note ?? "");
@@ -79,7 +79,7 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
       if (!currentCaseId && data.length > 0) {
         onCaseChange?.(data[0].case_id);
       }
-      return data as Case[];
+      return data;
     } catch (err) {
       console.error("Failed to load cases:", err);
       return [];
@@ -102,6 +102,11 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
   const handleAddEvidence = async () => {
     setError(null);
     setSuccess(null);
+
+    if (!canManageEvidence) {
+      setError("Votre profil est en lecture seule. Impossible d'ajouter une evidence.");
+      return;
+    }
 
     if (!newEvidence.evidence_uid || !newEvidence.case_id) {
       setError("Evidence UID and Case ID are required");
@@ -136,6 +141,11 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
   const handleAddCase = async () => {
     setError(null);
     setSuccess(null);
+
+    if (!canManageCases) {
+      setError("Votre profil est en lecture seule. Contactez un superadmin pour modifier les cases.");
+      return;
+    }
 
     if (!canCreateCase) {
       setError("Vous avez déjà un case. Contactez un administrateur pour en créer un autre.");
@@ -173,6 +183,11 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
     setError(null);
     setSuccess(null);
 
+    if (!canManageCases) {
+      setError("Votre profil est en lecture seule. Impossible de modifier ce case.");
+      return;
+    }
+
     try {
       await casesAPI.update(currentCaseId, {
         note: caseNoteDraft,
@@ -188,6 +203,10 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
 
   const handleDeleteCase = async () => {
     if (!currentCaseId) return;
+    if (!canManageCases) {
+      setError("Votre profil est en lecture seule. Impossible de supprimer un case.");
+      return;
+    }
     if (!window.confirm(`Delete case ${currentCaseId}? This will remove evidences and events linked to it.`)) {
       return;
     }
@@ -219,6 +238,17 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
   const textStrong = darkMode ? "text-slate-100" : "text-gray-900";
   const textWeak = darkMode ? "text-slate-400" : "text-gray-500";
   const inputBg = darkMode ? "bg-slate-800 border-slate-700 text-slate-200" : "bg-slate-50 border-gray-300 text-gray-900";
+  const newCaseButtonTitle = !canManageCases
+    ? "Profil en lecture seule : création de case désactivée."
+    : !canCreateCase
+    ? "Limite atteinte : un seul case par analyste standard (contactez un superadmin)."
+    : "Create a new case";
+  const addEvidenceDisabled = !currentCaseId || !canManageEvidence;
+  const addEvidenceButtonTitle = !canManageEvidence
+    ? "Profil en lecture seule : import d'evidence désactivé."
+    : currentCaseId
+    ? "Add evidence to the selected case"
+    : "Create or select a case before adding evidences.";
 
   return (
     <div className="flex flex-col gap-4 h-full">
@@ -233,20 +263,16 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
             onClick={() => setShowAddCaseModal(true)}
             disabled={!canCreateCase}
             className={`${darkMode ? "border-sky-600/30 bg-sky-900/20 text-sky-200 hover:bg-sky-900/30" : "border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100"}`}
-            title={
-              canCreateCase
-                ? "Create a new case"
-                : "Limite atteinte : un seul case par utilisateur standard (demandez à un administrateur)."
-            }
+            title={newCaseButtonTitle}
           >
             <Plus className="h-4 w-4 mr-2" />
             New Case
           </Button>
           <Button
             onClick={() => setShowAddModal(true)}
-            disabled={!currentCaseId}
+            disabled={addEvidenceDisabled}
             className={`${darkMode ? "border-violet-600/30 bg-violet-950/40 text-violet-200 hover:bg-violet-900/30" : "border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100"}`}
-            title={currentCaseId ? "Add evidence to the selected case" : "Create or select a case before adding evidences."}
+            title={addEvidenceButtonTitle}
           >
             <Plus className="h-4 w-4 mr-2" />
             Add Evidence
@@ -277,7 +303,15 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
         </Card>
       )}
 
-      {!canCreateCase && (
+      {!canManageCases && (
+        <Card className={`border-amber-500/30 ${darkMode ? "bg-amber-950/20" : "bg-amber-50"}`}>
+          <CardContent className="p-3 text-sm">
+            Profil en lecture seule : vous pouvez consulter les cases mais pas en créer/modifier. Contactez un superadmin pour obtenir plus de droits.
+          </CardContent>
+        </Card>
+      )}
+
+      {canManageCases && !canCreateCase && (
         <Card className={`border-amber-500/30 ${darkMode ? "bg-amber-950/20" : "bg-amber-50"}`}>
           <CardContent className="p-3 text-sm">
             Vous avez atteint la limite d'un case. Demandez à un administrateur pour en créer d'autres.
@@ -334,11 +368,24 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
             </div>
 
             <div className="flex flex-col gap-2">
-              <label className={`text-sm font-medium ${textStrong}`}>Case note</label>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className={`text-sm font-medium ${textStrong}`}>Case note</label>
+                {currentCase?.hedgedoc_url && (
+                  <Button
+                    type="button"
+                    onClick={() => window.open(currentCase.hedgedoc_url ?? undefined, "_blank", "noopener,noreferrer")}
+                    className={`${darkMode ? "border-sky-600/30 bg-sky-900/20 text-sky-200 hover:bg-sky-900/30" : "border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100"} h-9 px-3 text-xs`}
+                  >
+                    <BookOpen className="mr-1.5 h-3.5 w-3.5" />
+                    Ouvrir dans HedgeDoc
+                  </Button>
+                )}
+              </div>
               <textarea
                 value={caseNoteDraft}
                 onChange={(e) => setCaseNoteDraft(e.target.value)}
                 rows={3}
+                disabled={!canManageCases}
                 className={`w-full rounded-lg border px-3 py-2 text-sm resize-none ${
                   darkMode ? "border-slate-700 bg-slate-900 text-slate-100" : "border-gray-300 bg-slate-50 text-gray-900"
                 }`}
@@ -351,6 +398,7 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
               <select
                 value={caseStatusDraft}
                 onChange={(e) => setCaseStatusDraft(e.target.value)}
+                disabled={!canManageCases}
                 className={`rounded-lg border px-3 py-2 text-sm ${
                   darkMode ? "border-slate-700 bg-slate-900 text-slate-100" : "border-gray-300 bg-slate-50 text-gray-900"
                 }`}
@@ -363,12 +411,16 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
             <div className="flex flex-wrap items-center gap-2 justify-between">
               <Button
                 onClick={handleUpdateCaseMeta}
+                disabled={!canManageCases}
+                title={!canManageCases ? "Profil en lecture seule : mise à jour désactivée." : undefined}
                 className={`${darkMode ? "border-emerald-600/30 bg-emerald-900/20 text-emerald-200 hover:bg-emerald-900/30" : "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"}`}
               >
                 Save changes
               </Button>
               <Button
                 onClick={handleDeleteCase}
+                disabled={!canManageCases}
+                title={!canManageCases ? "Profil en lecture seule : suppression désactivée." : undefined}
                 className={`${darkMode ? "border-rose-600/30 bg-rose-900/20 text-rose-200 hover:bg-rose-900/30" : "border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100"}`}
               >
                 Delete case
@@ -414,6 +466,7 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
               <p className={`${textWeak} mb-4`}>No evidences found for this case</p>
               <Button
                 onClick={() => setShowAddModal(true)}
+                disabled={addEvidenceDisabled}
                 className={`${darkMode ? "border-violet-600/30 bg-violet-950/40 text-violet-200" : "border-violet-300 bg-violet-50 text-violet-700"}`}
               >
                 <Plus className="h-4 w-4 mr-2" />
@@ -537,8 +590,12 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
                 <div className="flex gap-2 pt-4">
                   <Button
                     onClick={handleAddEvidence}
-                    disabled={uploading}
-                    className={`flex-1 ${uploading ? "opacity-50 cursor-not-allowed" : ""} ${darkMode ? "border-violet-600/30 bg-violet-950/40 text-violet-200 hover:bg-violet-900/30" : "border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100"}`}
+                    disabled={uploading || !canManageEvidence}
+                    title={!canManageEvidence ? "Profil en lecture seule : import d'evidence désactivé." : undefined}
+                    className={`flex-1 ${uploading ? "opacity-50 cursor-not-allowed" : ""} ${
+                      darkMode ? "border-violet-600/30 bg-violet-950/40 text-violet-200 hover:bg-violet-900/30"
+                        : "border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100"
+                    }`}
                   >
                     {uploading ? "Uploading..." : "Upload Evidence"}
                   </Button>
@@ -584,6 +641,7 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
                     }}
                     placeholder="e.g., INC-2025-001"
                     maxLength={24}
+                    disabled={!canManageCases}
                     className={`${darkMode ? "bg-slate-800 border-slate-600 text-slate-100 placeholder:text-slate-500" : "bg-white border-gray-300 text-gray-900 placeholder:text-gray-400"} rounded-lg`}
                   />
                   {newCase.case_id && (
@@ -602,6 +660,7 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
                     onChange={(e) => setNewCase({ ...newCase, note: e.target.value })}
                     placeholder="Brief description of the investigation"
                     rows={3}
+                    disabled={!canManageCases}
                     className={`w-full px-3 py-2 rounded-lg border resize-none ${darkMode ? "bg-slate-800 border-slate-600 text-slate-100 placeholder:text-slate-500" : "bg-white border-gray-300 text-gray-900 placeholder:text-gray-400"}`}
                   />
                 </div>
@@ -609,6 +668,8 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
                 <div className="flex gap-2 pt-4">
                   <Button
                     onClick={handleAddCase}
+                    disabled={!canCreateCase}
+                    title={!canCreateCase ? newCaseButtonTitle : undefined}
                     className={`flex-1 ${darkMode ? "border-sky-600/30 bg-sky-900/20 text-sky-200 hover:bg-sky-900/30" : "border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100"}`}
                   >
                     Create Case

@@ -1,21 +1,27 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import type { UserRole } from '../types';
+
+export type Role = UserRole;
 
 interface User {
   id: number;
   username: string;
   email: string;
   full_name: string;
-  role: string;
+  role: Role;
   is_active: boolean;
+  email_verified: boolean;
+  otp_enabled: boolean;
 }
 
 interface AuthContextType {
   user: User | null;
   token: string | null;
-  login: (username: string, password: string) => Promise<void>;
+  login: (username: string, password: string, otpCode?: string) => Promise<void>;
   logout: () => void;
   isAuthenticated: boolean;
   isLoading: boolean;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -75,14 +81,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  const login = async (username: string, password: string) => {
+  const login = async (username: string, password: string, otpCode?: string) => {
     try {
+      const payload: Record<string, string> = { username, password };
+      if (otpCode) {
+        payload.otp_code = otpCode;
+      }
       const response = await fetch(`${apiBaseUrl}/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
@@ -111,6 +121,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setUser(null);
   };
 
+  const refreshUser = async () => {
+    if (!token) {
+      return;
+    }
+    await fetchUserInfo(token);
+  };
+
   const value: AuthContextType = {
     user,
     token,
@@ -118,6 +135,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     logout,
     isAuthenticated: !!token && !!user,
     isLoading,
+    refreshUser,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

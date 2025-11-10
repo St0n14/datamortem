@@ -7,8 +7,12 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ..auth.dependencies import get_current_admin_user, get_current_user
-from ..auth.permissions import ensure_evidence_access_by_uid, is_admin_user
+from ..auth.dependencies import (
+    get_current_admin_user,
+    get_current_superadmin_user,
+    get_current_user,
+)
+from ..auth.permissions import ensure_evidence_access_by_uid
 from ..db import get_db
 from ..models import CustomScript, TaskRun, User, UserScript
 from ..schemas.script_schemas import (
@@ -34,7 +38,7 @@ router = APIRouter(prefix="/api/scripts", tags=["scripts"])
 @router.get("", response_model=list[ScriptResponse])
 def list_scripts(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_superadmin_user),
 ):
     return db.query(CustomScript).order_by(CustomScript.created_at_utc.desc()).all()
 
@@ -43,7 +47,7 @@ def list_scripts(
 def create_script(
     payload: ScriptCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_superadmin_user),
 ):
     script = CustomScript(
         name=payload.name.strip(),
@@ -106,7 +110,7 @@ def my_installed_scripts(
 def import_from_github(
     payload: GitHubImportRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_superadmin_user),
 ):
     """
     Import Python scripts from a GitHub repository.
@@ -197,14 +201,11 @@ def import_from_github(
 def get_script(
     script_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_superadmin_user),
 ):
     script = _get_script(script_id, db)
     if not script:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Script not found")
-
-    if not is_admin_user(current_user) and script.created_by_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
     return script
 
@@ -219,9 +220,6 @@ def run_script(
     script = db.query(CustomScript).filter_by(id=script_id).first()
     if not script:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Script not found")
-
-    if not is_admin_user(current_user) and script.created_by_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
     evidence = ensure_evidence_access_by_uid(payload.evidence_uid, current_user, db)
 
@@ -271,7 +269,7 @@ def approve_script(
     script_id: int,
     approved: bool = True,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_superadmin_user),
 ):
     script = _get_script(script_id, db)
     if not script:
@@ -313,7 +311,7 @@ def assign_script(
     script_id: int,
     req: ScriptAssignRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_superadmin_user),
 ):
     """Admin endpoint to assign a script to any user."""
     script = _get_script(script_id, db)
@@ -343,7 +341,7 @@ def assign_script(
 def uninstall_from_all_users(
     script_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_superadmin_user),
 ):
     """Admin endpoint to remove a script from all users' profiles."""
     script = _get_script(script_id, db)

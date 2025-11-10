@@ -6,7 +6,7 @@ ADMIN_USER := admin
 ADMIN_PASS := admin123
 DEMO_CASE := demo_case
 DEMO_EVIDENCE := demo_evidence
-DEMO_EVENTS := 2000
+DEMO_EVENTS := 200000
 
 # Colors for output
 BLUE := \033[0;34m
@@ -115,7 +115,9 @@ demo-data: ## Ingère des données de démo
 test: ## Lance les tests
 	@echo "$(YELLOW)Running tests...$(NC)"
 	@echo "$(BLUE)→ API health check$(NC)"
-	@curl -f http://localhost:8080/api/health 2>/dev/null && echo "$(GREEN)✓ API is healthy$(NC)" || echo "$(RED)✗ API is not running$(NC)"
+	@curl -sf http://localhost:8080/api/health >/dev/null && echo "$(GREEN)✓ API is healthy$(NC)" || (echo "$(RED)✗ API is not running$(NC)"; exit 1)
+	@echo "$(BLUE)→ End-to-end ingestion + RBAC smoke test$(NC)"
+	@python3 scripts/test_ingestion_complete.py --case-id test_ingest_smoke --evidence-uid test_ev_smoke --events 10 --cleanup --rbac-check
 
 test-ingestion: ## Test le flux d'ingestion complet
 	@echo "$(YELLOW)Testing ingestion flow...$(NC)"

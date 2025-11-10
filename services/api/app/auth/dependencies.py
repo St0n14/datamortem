@@ -8,7 +8,9 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..models import User
+from ..config import settings
 from .security import decode_access_token
+from .permissions import is_admin_user, is_superadmin_user
 
 
 # HTTP Bearer token security scheme
@@ -77,6 +79,12 @@ async def get_current_user(
             detail="User account is inactive"
         )
 
+    if settings.dm_enable_email_verification and not user.email_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email address is not verified"
+        )
+
     return user
 
 
@@ -110,10 +118,24 @@ async def get_current_admin_user(
     Raises:
         HTTPException: If user is not an admin
     """
-    if current_user.role != "admin" and not current_user.is_superuser:
+    if not is_admin_user(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions (admin required)"
+        )
+    return current_user
+
+
+async def get_current_superadmin_user(
+    current_user: User = Depends(get_current_user)
+) -> User:
+    """
+    Get the current user and verify they are superadmin (full system access).
+    """
+    if not is_superadmin_user(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not enough permissions (superadmin required)"
         )
     return current_user
 
@@ -152,6 +174,9 @@ async def get_optional_user(
 
     user = db.query(User).filter(User.id == user_id).first()
     if user is None or not user.is_active:
+        return None
+
+    if settings.dm_enable_email_verification and not user.email_verified:
         return None
 
     return user

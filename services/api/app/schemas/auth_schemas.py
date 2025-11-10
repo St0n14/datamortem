@@ -5,6 +5,8 @@ from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, EmailStr, Field
 
+from ..auth.roles import RoleName
+
 
 # ==================
 # User Schemas
@@ -24,15 +26,24 @@ class UserUpdate(BaseModel):
     username: Optional[str] = Field(None, min_length=3, max_length=50)
     full_name: Optional[str] = None
     password: Optional[str] = Field(None, min_length=8, max_length=100)
-    role: Optional[str] = None
+    role: Optional[RoleName] = None
     is_active: Optional[bool] = None
+
+
+class UserProfileUpdate(BaseModel):
+    """Fields a regular user can modify on their own profile."""
+    email: Optional[EmailStr] = None
+    username: Optional[str] = Field(None, min_length=3, max_length=50)
+    full_name: Optional[str] = None
 
 
 class UserInDB(UserBase):
     id: int
-    role: str
+    role: RoleName
     is_active: bool
     is_superuser: bool
+    email_verified: bool
+    otp_enabled: bool
     created_at_utc: datetime
     last_login_utc: Optional[datetime]
 
@@ -43,8 +54,10 @@ class UserInDB(UserBase):
 class UserPublic(UserBase):
     """Public user info without sensitive data"""
     id: int
-    role: str
+    role: RoleName
     is_active: bool
+    email_verified: bool
+    otp_enabled: bool
     created_at_utc: datetime
 
     class Config:
@@ -59,7 +72,7 @@ class TokenData(BaseModel):
     user_id: int
     username: str
     email: str
-    role: str
+    role: RoleName
 
 
 class Token(BaseModel):
@@ -74,7 +87,7 @@ class TokenPayload(BaseModel):
     sub: int  # user_id
     username: str
     email: str
-    role: str
+    role: RoleName
     exp: int  # expiration timestamp
 
 
@@ -82,11 +95,16 @@ class LoginRequest(BaseModel):
     """Login credentials"""
     username: str
     password: str
+    otp_code: Optional[str] = None
 
 
 class RegisterRequest(UserCreate):
     """Registration request (extends UserCreate)"""
     pass
+
+
+class AdminCreateUserRequest(UserCreate):
+    role: RoleName
 
 
 class PasswordChangeRequest(BaseModel):
@@ -98,3 +116,24 @@ class PasswordChangeRequest(BaseModel):
 class PasswordResetRequest(BaseModel):
     """Password reset request"""
     email: EmailStr
+
+
+class EmailVerificationRequest(BaseModel):
+    token: str = Field(..., min_length=10)
+
+
+class ResendVerificationRequest(BaseModel):
+    email: EmailStr
+
+
+class OTPSetupResponse(BaseModel):
+    secret: str
+    otpauth_url: str
+
+
+class OTPActivateRequest(BaseModel):
+    code: str = Field(..., min_length=6, max_length=10)
+
+
+class OTPDisableRequest(BaseModel):
+    code: str = Field(..., min_length=6, max_length=10)

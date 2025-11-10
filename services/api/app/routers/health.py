@@ -7,8 +7,10 @@ from app.models import User
 from app.db import SessionLocal
 from sqlalchemy import text
 import redis
-from celery import Celery
-import os
+
+from app.config import settings
+from app.celery_app import celery_app, is_eager_mode
+from app.opensearch.client import get_opensearch_client
 
 router = APIRouter(prefix="/health", tags=["health"])
 
@@ -26,11 +28,13 @@ def check_postgres() -> dict:
 
 def check_redis() -> dict:
     """Check Redis connection"""
+    broker_url = settings.dm_celery_broker
+    if broker_url.startswith("memory://"):
+        return {"status": "degraded", "message": "Broker in memory mode"}
+
     try:
-        redis_host = os.getenv("REDIS_HOST", "localhost")
-        redis_port = int(os.getenv("REDIS_PORT", "6379"))
-        r = redis.Redis(host=redis_host, port=redis_port, socket_connect_timeout=2)
-        r.ping()
+        redis_client = redis.Redis.from_url(broker_url, socket_connect_timeout=2)
+        redis_client.ping()
         return {"status": "healthy", "message": "Connected"}
     except Exception as e:
         return {"status": "unhealthy", "message": str(e)}
@@ -38,19 +42,20 @@ def check_redis() -> dict:
 
 def check_celery() -> dict:
     """Check Celery worker status"""
+    if is_eager_mode:
+        return {"status": "healthy", "message": "Running in eager mode"}
+
     try:
-        celery_broker = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
-        celery_app = Celery(broker=celery_broker)
-
-        # Inspect active workers
         inspect = celery_app.control.inspect(timeout=2.0)
-        active_workers = inspect.active()
+        if not inspect:
+            return {"status": "unhealthy", "message": "No workers responded"}
 
-        if active_workers:
-            worker_count = len(active_workers)
+        stats = inspect.stats()
+        if stats:
+            worker_count = len(stats)
             return {"status": "healthy", "message": f"{worker_count} worker(s) active"}
-        else:
-            return {"status": "unhealthy", "message": "No workers available"}
+
+        return {"status": "unhealthy", "message": "No worker stats available"}
     except Exception as e:
         return {"status": "unhealthy", "message": str(e)}
 
@@ -58,8 +63,7 @@ def check_celery() -> dict:
 def check_opensearch() -> dict:
     """Check OpenSearch connection"""
     try:
-        from app.opensearch.client import get_opensearch_client
-        client = get_opensearch_client()
+        client = get_opensearch_client(settings)
         health = client.cluster.health()
         status = health.get("status", "unknown")
 

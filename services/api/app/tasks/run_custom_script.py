@@ -58,6 +58,13 @@ def run_custom_script(self, script_id: int, evidence_uid: str, task_run_id: int)
                 db.commit()
             return
 
+        if script.language != "python":
+            run.status = "error"
+            run.error_message = f"Language {script.language} not supported for automatic execution"
+            run.ended_at_utc = datetime.utcnow()
+            db.commit()
+            return
+
         case = evidence.case
         if not case:
             run.status = "error"

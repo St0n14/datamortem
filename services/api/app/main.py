@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
 from .db import Base, engine
-from .routers import pipeline, events, case, evidence, artifacts, search, indexing, auth, scripts, health
+from .routers import pipeline, events, case, evidence, artifacts, search, indexing, auth, scripts, health, admin
 from .opensearch.client import close_opensearch_client
 
 # Assure que les tables existent (SQLite dev mode)
@@ -33,6 +33,7 @@ app.include_router(search.router, prefix="/api")      # OpenSearch search
 app.include_router(indexing.router, prefix="/api")    # OpenSearch indexing
 app.include_router(scripts.router)                    # Custom scripts management
 app.include_router(health.router, prefix="/api")      # System health status
+app.include_router(admin.router, prefix="/api")       # Admin stats
 
 @app.get("/health")
 def health():

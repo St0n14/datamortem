@@ -6,9 +6,19 @@ __pycache__/
 *.pyc
 *.so
 .venv/
-.env
-.env.local
 *.log
+
+# ---- Secrets & Certificates ----
+.env
+.env.*
+*.env
+*.secret
+secrets/
+*.pem
+*.key
+*.crt
+!.env.example
+!*/.env.example
 
 # ---- JJ / Git / IDE ----
 .jj/
@@ -16,6 +26,10 @@ __pycache__/
 .idea/
 .vscode/
 *.swp
+
+# ---- Runtime PIDs ----
+*.pid
+celerybeat-schedule
 
 # ---- Local Databases ----
 *.db
@@ -31,7 +45,16 @@ storage/evidence-master/**
 *.iso
 *.evtx
 *.mem
+*.dd
+*.raw
+*.E01
+*.AD1
+*.qcow2
+*.bin
+*.dmp
+*.hpak
 *.pcap
+*.pcapng
 *.csv
 *.jsonl
 *.zip
@@ -40,9 +63,14 @@ storage/evidence-master/**
 *.parquet
 *.tmp
 
+# ---- Docker Volumes ----
+postgres-data/
+redis-data/
+opensearch-data/
+lake-data/
+
 # ---- Test outputs ----
 test_output_*
-.env
 *.db
 **/dev.db
 /lake/
