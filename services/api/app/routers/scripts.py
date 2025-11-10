@@ -49,6 +49,8 @@ def create_script(
         name=payload.name.strip(),
         description=payload.description,
         language=payload.language,
+        python_version=payload.python_version.strip() if payload.python_version else "3.11",
+        requirements=payload.requirements.strip() if payload.requirements else None,
         source_code=payload.source_code,
         created_by_id=current_user.id,
     )

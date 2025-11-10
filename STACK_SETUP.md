@@ -378,6 +378,23 @@ const results = await response.json();
 */
 ```
 
+### Générer rapidement un case + evidences + événements
+
+```bash
+DM_ADMIN_USER=admin DM_ADMIN_PASS=admin123 \
+python scripts/demo_data.py \
+  --case-id demo_case \
+  --evidence demo_evidence \
+  --events 5000
+```
+
+Ce script :
+- se connecte avec un compte admin (env `DM_ADMIN_USER/DM_ADMIN_PASS`)
+- crée le case / l'evidence s'ils n'existent pas
+- injecte N événements synthétiques via `/api/events/ingest` (par lots, configurable)
+
+Voir `python scripts/demo_data.py --help` pour les options (`--base-url`, `--chunk-size`, etc.).
+
 ---
 
 ## 📊 Interfaces disponibles

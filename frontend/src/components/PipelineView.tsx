@@ -342,6 +342,10 @@ export function PipelineView({ selectedEvidenceUid, darkMode }: PipelineViewProp
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             {scripts.map((script) => {
               const runsForScript = scriptTaskRuns.filter((run) => run.script_id === script.id);
+              const requirementPreview = script.requirements
+                ? script.requirements.split(/\r?\n/).filter((line) => line.trim().length > 0)
+                : [];
+              const runnable = script.language === 'python';
               return (
                 <div
                   key={script.id}
@@ -364,10 +368,22 @@ export function PipelineView({ selectedEvidenceUid, darkMode }: PipelineViewProp
                     {script.language}
                   </Badge>
                 </div>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+                  <Badge
+                    className={`border ${
+                      darkMode ? 'border-slate-700 bg-slate-900 text-slate-200' : 'border-gray-300 bg-white text-gray-700'
+                    }`}
+                  >
+                    Python {script.python_version || '3.x'}
+                  </Badge>
+                  {requirementPreview.length > 0 && (
+                    <span className={textWeak}>{requirementPreview.length} dépendance{requirementPreview.length > 1 ? 's' : ''}</span>
+                  )}
+                </div>
                 <div className="mt-4 flex flex-wrap items-center gap-2">
                   <Button
                     onClick={() => handleRunScript(script.id)}
-                    disabled={!selectedEvidenceUid || runningScriptId === script.id}
+                    disabled={!selectedEvidenceUid || runningScriptId === script.id || !runnable}
                     className={`h-8 px-3 text-[11px] ${
                       darkMode
                         ? 'border-violet-600/30 bg-violet-950/40 text-violet-200 hover:bg-violet-900/30 disabled:opacity-50'
@@ -379,11 +395,13 @@ export function PipelineView({ selectedEvidenceUid, darkMode }: PipelineViewProp
                         <Loader className="mr-1 h-3 w-3 animate-spin" />
                         Running…
                       </>
-                    ) : (
+                    ) : runnable ? (
                       <>
                         <Terminal className="mr-1 h-3 w-3" />
                         Run
                       </>
+                    ) : (
+                      <>Langage non supporté</>
                     )}
                   </Button>
                   {runsForScript.length > 0 && (
@@ -396,6 +414,11 @@ export function PipelineView({ selectedEvidenceUid, darkMode }: PipelineViewProp
                     </Badge>
                   )}
                 </div>
+                {requirementPreview.length > 0 && (
+                  <pre className={`mt-3 max-h-24 overflow-auto text-[11px] rounded border px-2 py-1 ${darkMode ? 'border-slate-800 bg-slate-900 text-slate-200' : 'border-gray-200 bg-white text-gray-700'}`}>
+                    {requirementPreview.join('\n')}
+                  </pre>
+                )}
                 </div>
               );
             })}

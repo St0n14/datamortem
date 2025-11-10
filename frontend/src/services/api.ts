@@ -207,11 +207,20 @@ export const searchAPI = {
 export const scriptsAPI = {
   list: () => fetchAPI<Script[]>('/scripts'),
 
-  create: (data: { name: string; description?: string; language: 'python' | 'perl' | 'rust'; source_code: string }) =>
+  create: (data: {
+    name: string;
+    description?: string;
+    language: 'python' | 'perl' | 'rust';
+    source_code: string;
+    python_version?: string;
+    requirements?: string;
+  }) =>
     fetchAPI<Script>('/scripts', {
       method: 'POST',
       body: JSON.stringify({
         ...data,
+        python_version: data.python_version ?? '3.11',
+        requirements: data.requirements,
       }),
     }),
 

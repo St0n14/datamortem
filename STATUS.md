@@ -12,7 +12,7 @@
 - ✅ **Scripts personnalisés & marketplace** : stockage + exécution Python pour admins, marketplace consultable par tous, assignation contrôlée via un admin.
 - ✅ **Durcissement scripts** : endpoints admin-only, noms sanitizés, exécution localisée pending sandbox.
 - ✅ **Load balancing local** : Traefik devant plusieurs réplicas FastAPI, frontend/config adaptés (`http://localhost:8080`).
-- ✅ **Tests de charge** : scripts k6 (`load-tests/`) pour valider la montée en charge avant industrialisation.
+- ✅ **Tests de charge** : scripts k6 (`load-tests/`) + script `scripts/demo_data.py` pour générer rapidement cases/evidences/événements.
 - ✅ Config centralisée via `.env`, Explorer moderne, timeline qui se réinitialise correctement.
 
 ---

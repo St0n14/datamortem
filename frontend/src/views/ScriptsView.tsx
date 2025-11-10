@@ -234,6 +234,28 @@ export function ScriptsView({ darkMode }: ScriptsViewProps) {
                     <option value="rust">Rust</option>
                   </select>
                 </div>
+                <div>
+                  <label className={`mb-1 block text-xs font-semibold uppercase tracking-wide ${darkMode ? 'text-slate-200' : 'text-gray-700'}`}>
+                    Version Python
+                  </label>
+                  <select
+                    value={formState.python_version}
+                    onChange={(event) => setFormState((prev) => ({ ...prev, python_version: event.target.value }))}
+                    disabled={formState.language !== 'python'}
+                    className={`w-full rounded-lg border px-3 py-2 text-sm ${
+                      darkMode ? 'border-slate-800 bg-slate-900 text-slate-100' : 'border-gray-300 bg-white text-gray-900'
+                    } ${formState.language !== 'python' ? 'opacity-60' : ''}`}
+                  >
+                    {['3.12', '3.11', '3.10', '3.9'].map((version) => (
+                      <option key={version} value={version}>
+                        {version}
+                      </option>
+                    ))}
+                  </select>
+                  <p className={`mt-1 text-[11px] ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>
+                    Utilisée uniquement pour les scripts Python (exécution via venv dédié).
+                  </p>
+                </div>
               </div>
 
               <div>
@@ -266,6 +288,25 @@ export function ScriptsView({ darkMode }: ScriptsViewProps) {
                   onChange={(event) => setFormState((prev) => ({ ...prev, source_code: event.target.value }))}
                   placeholder="# Votre script Python..."
                 />
+              </div>
+
+              <div>
+                <label className={`mb-1 block text-xs font-semibold uppercase tracking-wide ${darkMode ? 'text-slate-200' : 'text-gray-700'}`}>
+                  Dépendances (requirements.txt)
+                </label>
+                <textarea
+                  className={`min-h-[120px] w-full rounded-lg border px-3 py-2 font-mono text-sm ${
+                    darkMode
+                      ? 'border-slate-800 bg-slate-900 text-slate-100 focus:border-violet-600 focus:outline-none'
+                      : 'border-gray-300 bg-white text-gray-900 focus:border-violet-500 focus:outline-none'
+                  }`}
+                  value={formState.requirements}
+                  onChange={(event) => setFormState((prev) => ({ ...prev, requirements: event.target.value }))}
+                  placeholder="requests==2.31.0&#10;rich>=13.0.0"
+                />
+                <p className={`mt-1 text-[11px] ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>
+                  Un package par ligne (format requirements.txt). Laisser vide si aucune dépendance.
+                </p>
               </div>
 
               <div className="flex items-center gap-3">
@@ -395,6 +436,8 @@ export function ScriptsView({ darkMode }: ScriptsViewProps) {
                 >
                   {(() => {
                     const runnable = script.language === 'python';
+                    const requirementCount =
+                      script.requirements?.split(/\r?\n/).filter((line) => line.trim().length > 0).length ?? 0;
                     return (
                       <>
                   <div className="flex flex-wrap items-center gap-2">
@@ -406,6 +449,14 @@ export function ScriptsView({ darkMode }: ScriptsViewProps) {
                       <Badge className={darkMode ? 'border-emerald-600/30 bg-emerald-950/40 text-emerald-200' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}>
                         ✓ Marketplace
                       </Badge>
+                    )}
+                    <Badge className={darkMode ? 'border-slate-700 bg-slate-900 text-slate-200' : 'border-gray-300 bg-white text-gray-700'}>
+                      Python {script.python_version || '3.x'}
+                    </Badge>
+                    {requirementCount > 0 && (
+                      <span className={`text-[11px] ${darkMode ? 'text-slate-400' : 'text-gray-600'}`}>
+                        {requirementCount} dépendance{requirementCount > 1 ? 's' : ''}
+                      </span>
                     )}
                     <span className={`text-xs ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>
                       {new Date(script.created_at_utc).toLocaleString()}
@@ -455,6 +506,14 @@ export function ScriptsView({ darkMode }: ScriptsViewProps) {
                         Description
                       </p>
                       <p className={`text-sm ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>{script.description}</p>
+                    </div>
+                  )}
+                  {script.requirements && requirementCount > 0 && (
+                    <div className={`mt-3 rounded-lg border px-3 py-2 text-xs ${darkMode ? 'border-slate-800 bg-slate-900/30' : 'border-gray-200 bg-white'}`}>
+                      <p className={`font-semibold uppercase tracking-wide mb-1 ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                        Dépendances ({requirementCount})
+                      </p>
+                      <pre className="max-h-24 overflow-auto whitespace-pre-wrap">{script.requirements}</pre>
                     </div>
                   )}
                   <div className="mt-3 flex flex-col gap-2 md:flex-row md:items-center">

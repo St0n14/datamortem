@@ -125,10 +125,20 @@ def ingest_events(
 ):
     """
     Ingestion d'une liste d'events.
+    RESTRICTION: Réservé aux administrateurs uniquement.
+    Les scripts de pipeline utilisent l'indexation directe OpenSearch.
+
     - Vérifie que le case_id existe
     - Sérialise tags (list[str]) en texte JSON
     - Sérialise raw (dict) en texte JSON
     """
+    # Vérification admin uniquement
+    if not is_admin_user(current_user):
+        raise HTTPException(
+            status_code=403,
+            detail="Event ingestion is restricted to administrators only"
+        )
+
     new_objs = []
     now_utc = datetime.utcnow()
 

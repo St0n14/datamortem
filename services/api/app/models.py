@@ -158,6 +158,8 @@ class CustomScript(Base):
     name: Mapped[str] = mapped_column(String, unique=True, index=True)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     language: Mapped[str] = mapped_column(String, default="python")
+    python_version: Mapped[str] = mapped_column(String, default="3.11")
+    requirements: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     source_code: Mapped[str] = mapped_column(Text)
     created_at_utc: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     created_by_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)

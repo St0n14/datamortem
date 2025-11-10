@@ -1,15 +1,45 @@
 """
-Celery task to execute a stored custom script against an evidence.
+Celery task to execute a stored custom script against an evidence with an isolated venv.
 """
-import io
+from __future__ import annotations
+
 import os
-from contextlib import redirect_stdout
+import shutil
+import subprocess
+import sys
 from datetime import datetime
+from typing import Optional
 
 from ..celery_app import celery_app
 from ..config import settings
 from ..db import SessionLocal
 from ..models import CustomScript, Evidence, TaskRun
+
+
+def _resolve_python_interpreter(requested: Optional[str]) -> str:
+    """Resolve the requested python version to an executable path."""
+    candidates: list[str] = []
+    version = (requested or "").strip()
+    if version:
+        if version.startswith("python"):
+            candidates.append(version)
+        else:
+            candidates.append(f"python{version}")
+            candidates.append(version)
+    candidates.append(sys.executable)
+
+    for candidate in candidates:
+        path = shutil.which(candidate)
+        if path:
+            return path
+    raise RuntimeError("Unable to locate a Python interpreter for the requested version.")
+
+
+def _venv_python_path(venv_dir: str) -> str:
+    """Return the python executable path inside the created virtualenv."""
+    if os.name == "nt":
+        return os.path.join(venv_dir, "Scripts", "python.exe")
+    return os.path.join(venv_dir, "bin", "python")
 
 
 @celery_app.task(bind=True, name="run_custom_script")
@@ -50,37 +80,67 @@ def run_custom_script(self, script_id: int, evidence_uid: str, task_run_id: int)
         with open(script_path, "w", encoding="utf-8") as f:
             f.write(script.source_code)
 
-        stdout_buffer = io.StringIO()
         run.status = "running"
         run.started_at_utc = datetime.utcnow()
-        run.progress_message = "executing python script"
+        run.progress_message = "setting up python environment"
         db.commit()
 
-        exec_globals = {
-            "__name__": "__datamortem_script__",
-        }
-        exec_locals = {
-            "CASE_ID": case.case_id,
-            "EVIDENCE_UID": evidence_uid,
-            "EVIDENCE_PATH": evidence.local_path,
-            "OUTPUT_DIR": output_dir,
-        }
-
         try:
-            compiled = compile(script.source_code, script_path, "exec")
-            with redirect_stdout(stdout_buffer):
-                exec(compiled, exec_globals, exec_locals)
+            base_python = _resolve_python_interpreter(script.python_version)
+            venv_dir = os.path.join(output_dir, "venv")
+            subprocess.run([base_python, "-m", "venv", venv_dir], check=True)
+            venv_python = _venv_python_path(venv_dir)
+            subprocess.run([venv_python, "-m", "pip", "install", "--upgrade", "pip"], check=True)
 
-            output_text = stdout_buffer.getvalue()
+            if script.requirements:
+                requirements_file = os.path.join(output_dir, "requirements.txt")
+                with open(requirements_file, "w", encoding="utf-8") as req_file:
+                    req_file.write(script.requirements.strip() + "\n")
+                run.progress_message = "installing dependencies"
+                db.commit()
+                subprocess.run([venv_python, "-m", "pip", "install", "-r", requirements_file], check=True)
+
+            run.progress_message = "executing script"
+            db.commit()
+
+            env = os.environ.copy()
+            env.update(
+                {
+                    "CASE_ID": case.case_id,
+                    "EVIDENCE_UID": evidence_uid,
+                    "EVIDENCE_PATH": evidence.local_path or "",
+                    "OUTPUT_DIR": output_dir,
+                }
+            )
+
+            result = subprocess.run(
+                [venv_python, script_path],
+                capture_output=True,
+                text=True,
+                env=env,
+                cwd=output_dir,
+                check=True,
+            )
+
             output_path = os.path.join(output_dir, "output.txt")
             with open(output_path, "w", encoding="utf-8") as f:
-                f.write(output_text)
+                f.write(result.stdout or "")
+                if result.stderr:
+                    f.write("\n--- STDERR ---\n")
+                    f.write(result.stderr)
 
             run.status = "success"
             run.ended_at_utc = datetime.utcnow()
             run.output_path = output_path
             run.progress_message = "script execution complete"
             db.commit()
+        except subprocess.CalledProcessError as proc_error:
+            run.status = "error"
+            run.ended_at_utc = datetime.utcnow()
+            run.error_message = proc_error.stderr or str(proc_error)
+            run.progress_message = "script execution failed"
+            db.commit()
+            raise
         except Exception as script_error:
             run.status = "error"
             run.ended_at_utc = datetime.utcnow()

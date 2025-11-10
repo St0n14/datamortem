@@ -115,6 +115,8 @@ export interface Script {
   name: string;
   description?: string | null;
   language: string;
+  python_version: string;
+  requirements?: string | null;
   source_code: string;
   created_at_utc: string;
   is_approved: boolean;
@@ -126,6 +128,8 @@ export interface ScriptSummary {
   name: string;
   description?: string | null;
   language: string;
+  python_version: string;
+  requirements?: string | null;
   is_approved: boolean;
   published_at?: string | null;
 }
