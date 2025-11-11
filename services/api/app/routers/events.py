@@ -153,7 +153,7 @@ def ingest_events(
         case_exists = db.execute(
             select(Case).where(Case.case_id == ev.case_id)
         ).scalar_one_or_none()
-        ensure_case_access(case_exists, current_user)
+        ensure_case_access(case_exists, current_user, db)
 
         tags_text = json.dumps(ev.tags) if ev.tags else None
 

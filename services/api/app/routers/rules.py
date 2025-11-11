@@ -1,7 +1,9 @@
 from datetime import datetime
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel, Field
 from typing import List, Literal
+from ..models import User
+from ..auth.dependencies import get_current_active_user
 
 router = APIRouter()
 
@@ -34,12 +36,12 @@ RULES: List[dict] = [
 
 
 @router.get("/rules")
-def list_rules():
+def list_rules(current_user: User = Depends(get_current_active_user)):
     return RULES
 
 
 @router.post("/rules")
-def create_rule(rule: RuleIn):
+def create_rule(rule: RuleIn, current_user: User = Depends(get_current_active_user)):
     if any(existing["name"].lower() == rule.name.lower() for existing in RULES):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

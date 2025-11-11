@@ -16,7 +16,7 @@ Plateforme d'analyse forensique (FastAPI + React + Celery + OpenSearch).
 
    En `staging`/`production`, le `dm_db_url` doit pointer vers votre Cloud SQL/Postgres, et `dm_celery_broker` vers Redis/MQ (les defaults dev sont refusés).
 
-2. Pour le frontend, définir `VITE_API_BASE_URL` si besoin (`frontend/.env`).
+2. Pour le frontend, définir `VITE_API_BASE_URL` si besoin (`frontend/.env`). Vous pouvez également fixer `VITE_SESSION_IDLE_TIMEOUT_MINUTES` (par défaut `30`) pour spécifier après combien de minutes d'inactivité la session est automatiquement fermée côté UI.
 
 ## Démarrage local
 
@@ -44,6 +44,7 @@ npm run dev
   - `DM_HEDGEDOC_ENABLED` (par défaut `true` en local)
   - `DM_HEDGEDOC_BASE_URL` (URL interne utilisée par l'API, ex. `http://hedgedoc:3000`)
   - `DM_HEDGEDOC_PUBLIC_URL` (URL partagée avec les utilisateurs, ex. `http://localhost:3000`)
+- Le service Docker `hedgedoc` est configuré avec `CMD_ALLOW_FREEURL=true` afin que la visite d'un slug inexistant crée automatiquement la note (sinon l'UI obtiendrait une 404).
 
 Les notes sont pré-créées côté serveur afin d'être immédiatement disponibles lorsque l'utilisateur clique sur le bouton "Ouvrir dans HedgeDoc".
 

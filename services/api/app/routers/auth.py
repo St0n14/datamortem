@@ -6,7 +6,9 @@ from datetime import datetime, timedelta
 from secrets import token_urlsafe
 
 import pyotp
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi.responses import JSONResponse
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 
 from ..config import settings
@@ -42,6 +44,7 @@ from ..services.email_service import (
     is_email_service_configured,
     send_verification_email,
 )
+from ..middleware.rate_limit import rate_limit_login, rate_limit_register
 
 router = APIRouter(prefix="/api/auth", tags=["authentication"])
 logger = logging.getLogger(__name__)
@@ -83,7 +86,9 @@ def _ensure_otp_enabled() -> None:
 
 
 @router.post("/register", response_model=UserPublic, status_code=status.HTTP_201_CREATED)
+@rate_limit_register()
 def register(
+    request: Request,
     user_data: RegisterRequest,
     db: Session = Depends(get_db)
 ):
@@ -129,9 +134,30 @@ def register(
     db.refresh(new_user)
 
     if verification_token:
-        send_verification_email(new_user.email, new_user.username, verification_token)
+        try:
+            send_verification_email(new_user.email, new_user.username, verification_token)
+        except Exception as e:
+            logger.warning(f"Failed to send verification email: {e}")
 
-    return new_user
+    # Convert to dict for JSONResponse (slowapi requires Response object)
+    # Build response dict manually to ensure JSON serialization
+    user_dict = {
+        "id": new_user.id,
+        "email": new_user.email,
+        "username": new_user.username,
+        "full_name": new_user.full_name,
+        "role": new_user.role,
+        "is_active": new_user.is_active,
+        "email_verified": getattr(new_user, 'email_verified', False),
+        "otp_enabled": getattr(new_user, 'otp_enabled', False),
+        "created_at_utc": new_user.created_at_utc.isoformat() if new_user.created_at_utc else None,
+    }
+    # Ensure all values are JSON-serializable
+    user_dict = jsonable_encoder(user_dict)
+    return JSONResponse(
+        content=user_dict,
+        status_code=status.HTTP_201_CREATED
+    )
 
 
 @router.post("/users", response_model=UserPublic, status_code=status.HTTP_201_CREATED)
@@ -180,7 +206,9 @@ def admin_create_user(
 
 
 @router.post("/login", response_model=Token)
+@rate_limit_login()
 def login(
+    request: Request,
     credentials: LoginRequest,
     db: Session = Depends(get_db)
 ):
@@ -258,11 +286,11 @@ def login(
         expires_delta=access_token_expires
     )
 
-    return {
+    return JSONResponse(content={
         "access_token": access_token,
         "token_type": "bearer",
         "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,  # seconds
-    }
+    })
 
 
 @router.get("/me", response_model=UserInDB)
@@ -290,10 +318,18 @@ def update_current_user_profile(
     if not any([user_updates.username, user_updates.email, user_updates.full_name]):
         return current_user
 
-    if user_updates.username and user_updates.username != current_user.username:
+    # Reload user from the current session to ensure it's attached to this session
+    user = db.query(User).filter(User.id == current_user.id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    if user_updates.username and user_updates.username != user.username:
         conflict = (
             db.query(User)
-            .filter(User.username == user_updates.username, User.id != current_user.id)
+            .filter(User.username == user_updates.username, User.id != user.id)
             .first()
         )
         if conflict:
@@ -301,12 +337,12 @@ def update_current_user_profile(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Username already taken",
             )
-        current_user.username = user_updates.username
+        user.username = user_updates.username
 
-    if user_updates.email and user_updates.email != current_user.email:
+    if user_updates.email and user_updates.email != user.email:
         conflict = (
             db.query(User)
-            .filter(User.email == user_updates.email, User.id != current_user.id)
+            .filter(User.email == user_updates.email, User.id != user.id)
             .first()
         )
         if conflict:
@@ -314,18 +350,17 @@ def update_current_user_profile(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Email already taken",
             )
-        current_user.email = user_updates.email
-        verification_token = _prepare_email_verification(current_user)
+        user.email = user_updates.email
+        verification_token = _prepare_email_verification(user)
         if verification_token:
-            send_verification_email(current_user.email, current_user.username, verification_token)
+            send_verification_email(user.email, user.username, verification_token)
 
     if user_updates.full_name is not None:
-        current_user.full_name = user_updates.full_name
+        user.full_name = user_updates.full_name
 
-    db.add(current_user)
     db.commit()
-    db.refresh(current_user)
-    return current_user
+    db.refresh(user)
+    return user
 
 
 @router.post("/change-password")
@@ -340,16 +375,25 @@ def change_password(
     - **current_password**: Current password
     - **new_password**: New password (minimum 8 characters)
     """
+    # Reload user from the current session to ensure it's attached to this session
+    user = db.query(User).filter(User.id == current_user.id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
     # Verify current password
-    if not verify_password(password_data.current_password, current_user.hashed_password):
+    if not verify_password(password_data.current_password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Current password is incorrect"
         )
 
     # Update password
-    current_user.hashed_password = get_password_hash(password_data.new_password)
+    user.hashed_password = get_password_hash(password_data.new_password)
     db.commit()
+    db.refresh(user)
 
     return {"message": "Password updated successfully"}
 

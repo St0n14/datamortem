@@ -212,6 +212,8 @@ services:
     container_name: datamortem-hedgedoc
     environment:
       - CMD_DB_URL=postgres://hedgedoc:hedgedoc_password@hedgedoc-db:5432/hedgedoc
+      # Allow direct /<slug> creation so per-case notes resolve immediately
+      - CMD_ALLOW_FREEURL=true
       - CMD_ALLOW_ANONYMOUS=true
       - CMD_ALLOW_ANONYMOUS_EDITS=false
       - CMD_DEFAULT_PERMISSION=limited

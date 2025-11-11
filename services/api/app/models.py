@@ -9,6 +9,7 @@ from sqlalchemy import (
     DateTime,
     Boolean,
     ForeignKey,
+    Index,
 )
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 
@@ -50,6 +51,13 @@ class User(Base):
         back_populates="owner",
         cascade="all, delete-orphan",
     )
+    
+    # Cases où l'utilisateur est membre (partagés par un admin)
+    shared_cases: Mapped[List["CaseMember"]] = relationship(
+        "CaseMember",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
 
     custom_scripts: Mapped[List["CustomScript"]] = relationship(
         "CustomScript",
@@ -68,7 +76,7 @@ class Case(Base):
     case_id: Mapped[str] = mapped_column(String, unique=True, index=True)
     status: Mapped[str] = mapped_column(String, default="open")
     created_at_utc: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow
+        DateTime, default=datetime.utcnow, index=True  # Index pour optimiser le tri
     )
 
     # Remplace "description" par "note"
@@ -84,6 +92,12 @@ class Case(Base):
         ForeignKey("users.id"),
         nullable=True,
         index=True,
+    )
+    
+    # Index composite pour optimiser les requêtes filtrées par owner_id et triées par created_at_utc
+    # Cela améliore significativement les performances de list_cases()
+    __table_args__ = (
+        Index('idx_case_owner_created', 'owner_id', 'created_at_utc'),
     )
 
     # relations
@@ -104,6 +118,53 @@ class Case(Base):
         cascade="all, delete-orphan",
         primaryjoin="Case.case_id == Event.case_id",
     )
+    
+    # Membres partagés (analystes ajoutés par l'admin propriétaire)
+    members: Mapped[List["CaseMember"]] = relationship(
+        "CaseMember",
+        back_populates="case",
+        cascade="all, delete-orphan",
+    )
+
+
+# -----------------
+# CaseMember (partage de cases)
+# -----------------
+class CaseMember(Base):
+    __tablename__ = "case_members"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    case_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("cases.case_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    added_at_utc: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow
+    )
+    
+    # Index unique pour éviter les doublons
+    __table_args__ = (
+        Index('idx_case_member_unique', 'case_id', 'user_id', unique=True),
+    )
+    
+    # Relations
+    case: Mapped["Case"] = relationship(
+        "Case",
+        back_populates="members",
+    )
+    user: Mapped["User"] = relationship(
+        "User",
+        back_populates="shared_cases",
+    )
+
 
 # -----------------
 # Evidence
@@ -170,10 +231,40 @@ class CustomScript(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String, unique=True, index=True)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    language: Mapped[str] = mapped_column(String, default="python")
+
+    # Language configuration
+    language: Mapped[str] = mapped_column(String, default="python")  # python, rust, go, node
+    language_version: Mapped[str] = mapped_column(String, default="3.11")  # Ex: 3.11, 1.75, 1.21
+
+    # Legacy field (kept for backward compatibility, will be removed later)
     python_version: Mapped[str] = mapped_column(String, default="3.11")
+
+    # Dependencies (format depends on language)
+    # Python: requirements.txt format
+    # Rust: Cargo.toml dependencies section
+    # Go: go.mod format or space-separated packages
     requirements: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Source code or entry point filename
     source_code: Mapped[str] = mapped_column(Text)
+
+    # Additional files (JSON: {filename: content})
+    # For multi-file scripts (e.g., Rust with multiple .rs files)
+    additional_files: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Build command (optional, for compiled languages)
+    # Ex: "cargo build --release", "go build -o script main.go"
+    build_command: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    # Entry point for execution
+    # Python: script.py, Rust: ./target/release/script, Go: ./script
+    entry_point: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    # Resource limits
+    timeout_seconds: Mapped[int] = mapped_column(Integer, default=300)  # 5 minutes default
+    memory_limit_mb: Mapped[int] = mapped_column(Integer, default=512)  # 512MB default
+    cpu_limit: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # Ex: "1.5" for 1.5 CPU cores
+
     created_at_utc: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     created_by_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     is_approved: Mapped[bool] = mapped_column(Boolean, default=False, index=True)

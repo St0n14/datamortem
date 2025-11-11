@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from app.db import Base
 from app.config import settings
-from app.models import User, Case, Evidence, AnalysisModule, TaskRun, Event
+from app.models import User, Case, Evidence, AnalysisModule, TaskRun, Event, CustomScript, UserScript
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

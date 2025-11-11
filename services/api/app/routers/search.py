@@ -2,7 +2,8 @@
 Search router for OpenSearch API endpoints.
 """
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi.responses import JSONResponse
 from typing import Optional
 from sqlalchemy.orm import Session
 from ..schemas.opensearch_schemas import (
@@ -17,7 +18,7 @@ from ..schemas.opensearch_schemas import (
     IndexStatsResponse,
 )
 from ..opensearch.client import get_opensearch_client
-from ..opensearch.index_manager import get_index_name, get_document_count, get_index_stats
+from ..opensearch.index_manager import get_index_name, get_document_count, get_index_stats, create_index_if_not_exists
 from ..opensearch.search import (
     search_events,
     aggregate_field,
@@ -29,6 +30,7 @@ from ..models import User
 from ..auth.dependencies import get_current_active_user, get_current_superadmin_user
 from ..auth.permissions import ensure_case_access_by_id, get_accessible_case_ids
 from ..db import get_db
+from ..middleware.rate_limit import rate_limit_search
 import logging
 
 logger = logging.getLogger(__name__)
@@ -42,7 +44,9 @@ def get_opensearch_client_dep():
 
 
 @router.post("/query", response_model=SearchResponse)
+@rate_limit_search()
 def search_case_events(
+    request: Request,
     req: SearchRequest,
     client=Depends(get_opensearch_client_dep),
     current_user: User = Depends(get_current_active_user),
@@ -66,11 +70,22 @@ def search_case_events(
     ensure_case_access_by_id(req.case_id, current_user, db)
     index_name = get_index_name(req.case_id)
 
+    # Créer l'index à la volée s'il n'existe pas
     if not client.indices.exists(index=index_name):
-        raise HTTPException(
-            status_code=404,
-            detail=f"Index for case {req.case_id} not found"
-        )
+        logger.info(f"Index {index_name} does not exist, creating it automatically")
+        try:
+            create_index_if_not_exists(
+                client=client,
+                case_id=req.case_id,
+                shard_count=settings.dm_opensearch_shard_count,
+                replica_count=settings.dm_opensearch_replica_count
+            )
+        except Exception as e:
+            logger.error(f"Failed to create index {index_name}: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to create index for case {req.case_id}: {str(e)}"
+            )
 
     try:
         response = search_events(
@@ -86,13 +101,15 @@ def search_case_events(
             sort_order=req.sort_order
         )
 
-        return SearchResponse(
+        search_response = SearchResponse(
             hits=[hit["_source"] for hit in response["hits"]["hits"]],
             total=response["hits"]["total"]["value"],
             took=response["took"],
             from_=req.from_,
             size=req.size
         )
+        # Convert to JSONResponse (slowapi requires Response object)
+        return JSONResponse(content=search_response.model_dump())
 
     except Exception as e:
         logger.error(f"Search failed: {e}", exc_info=True)
@@ -123,11 +140,22 @@ def aggregate_case_field(
     ensure_case_access_by_id(req.case_id, current_user, db)
     index_name = get_index_name(req.case_id)
 
+    # Créer l'index à la volée s'il n'existe pas
     if not client.indices.exists(index=index_name):
-        raise HTTPException(
-            status_code=404,
-            detail=f"Index for case {req.case_id} not found"
-        )
+        logger.info(f"Index {index_name} does not exist, creating it automatically")
+        try:
+            create_index_if_not_exists(
+                client=client,
+                case_id=req.case_id,
+                shard_count=settings.dm_opensearch_shard_count,
+                replica_count=settings.dm_opensearch_replica_count
+            )
+        except Exception as e:
+            logger.error(f"Failed to create index {index_name}: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to create index for case {req.case_id}: {str(e)}"
+            )
 
     try:
         query = build_bool_query(
@@ -166,7 +194,9 @@ def aggregate_case_field(
 
 
 @router.post("/timeline", response_model=TimelineResponse)
+@rate_limit_search()
 def get_case_timeline(
+    request: Request,
     req: TimelineRequest,
     client=Depends(get_opensearch_client_dep),
     current_user: User = Depends(get_current_active_user),
@@ -186,11 +216,22 @@ def get_case_timeline(
     ensure_case_access_by_id(req.case_id, current_user, db)
     index_name = get_index_name(req.case_id)
 
+    # Créer l'index à la volée s'il n'existe pas
     if not client.indices.exists(index=index_name):
-        raise HTTPException(
-            status_code=404,
-            detail=f"Index for case {req.case_id} not found"
-        )
+        logger.info(f"Index {index_name} does not exist, creating it automatically")
+        try:
+            create_index_if_not_exists(
+                client=client,
+                case_id=req.case_id,
+                shard_count=settings.dm_opensearch_shard_count,
+                replica_count=settings.dm_opensearch_replica_count
+            )
+        except Exception as e:
+            logger.error(f"Failed to create index {index_name}: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to create index for case {req.case_id}: {str(e)}"
+            )
 
     try:
         query = build_bool_query(
@@ -207,24 +248,48 @@ def get_case_timeline(
             query=query
         )
 
+        # Gérer le cas où l'index est vide ou l'agrégation retourne une structure inattendue
+        if not timeline_result or "buckets" not in timeline_result:
+            logger.info(f"Timeline aggregation returned empty result for index {index_name}")
+            timeline_response = TimelineResponse(
+                interval=req.interval,
+                buckets=[],
+                total=0
+            )
+            # Convert to JSONResponse (slowapi requires Response object)
+            return JSONResponse(content=timeline_response.model_dump())
+
         buckets = [
             TimelineBucket(
-                timestamp=b["key_as_string"],
-                count=b["doc_count"]
+                timestamp=b.get("key_as_string", ""),
+                count=b.get("doc_count", 0)
             )
-            for b in timeline_result["buckets"]
+            for b in timeline_result.get("buckets", [])
         ]
 
         total = sum(b.count for b in buckets)
 
-        return TimelineResponse(
+        timeline_response = TimelineResponse(
             interval=req.interval,
             buckets=buckets,
             total=total
         )
+        # Convert to JSONResponse (slowapi requires Response object)
+        return JSONResponse(content=timeline_response.model_dump())
 
     except Exception as e:
         logger.error(f"Timeline aggregation failed: {e}", exc_info=True)
+        # Retourner une réponse vide plutôt qu'une erreur 500 si l'index est vide
+        # Cela permet au frontend de gérer gracieusement le cas d'un index vide
+        error_msg = str(e).lower()
+        if "index" in error_msg and ("not found" in error_msg or "does not exist" in error_msg):
+            timeline_response = TimelineResponse(
+                interval=req.interval,
+                buckets=[],
+                total=0
+            )
+            # Convert to JSONResponse (slowapi requires Response object)
+            return JSONResponse(content=timeline_response.model_dump())
         raise HTTPException(
             status_code=500,
             detail=f"Timeline aggregation failed: {str(e)}"
@@ -249,11 +314,22 @@ def get_case_index_stats(
     ensure_case_access_by_id(case_id, current_user, db)
     index_name = get_index_name(case_id)
 
+    # Créer l'index à la volée s'il n'existe pas
     if not client.indices.exists(index=index_name):
-        raise HTTPException(
-            status_code=404,
-            detail=f"Index for case {case_id} not found"
-        )
+        logger.info(f"Index {index_name} does not exist, creating it automatically")
+        try:
+            create_index_if_not_exists(
+                client=client,
+                case_id=case_id,
+                shard_count=settings.dm_opensearch_shard_count,
+                replica_count=settings.dm_opensearch_replica_count
+            )
+        except Exception as e:
+            logger.error(f"Failed to create index {index_name}: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to create index for case {case_id}: {str(e)}"
+            )
 
     try:
         doc_count = get_document_count(client, case_id)

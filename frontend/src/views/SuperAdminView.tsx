@@ -6,6 +6,7 @@ import { Button } from '../components/ui/Button';
 import { adminAPI } from '../services/api';
 import type { UserAccount, UserRole, AdminStats } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 
 interface SuperAdminViewProps {
   darkMode: boolean;
@@ -29,11 +30,8 @@ const statusColors: Record<string, string> = {
 export function SuperAdminView({ darkMode }: SuperAdminViewProps) {
   const [users, setUsers] = useState<UserAccount[]>([]);
   const [usersLoading, setUsersLoading] = useState(true);
-  const [usersError, setUsersError] = useState<string | null>(null);
-  const [userSuccess, setUserSuccess] = useState<string | null>(null);
   const [platformStats, setPlatformStats] = useState<AdminStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
-  const [statsError, setStatsError] = useState<string | null>(null);
   const [creatingUser, setCreatingUser] = useState(false);
   const [newUser, setNewUser] = useState({
     username: '',
@@ -43,6 +41,7 @@ export function SuperAdminView({ darkMode }: SuperAdminViewProps) {
     password: '',
   });
   const { user } = useAuth();
+  const { showSuccess, showError, showWarning } = useToast();
 
   const validateNewUser = () => {
     if (newUser.username.trim().length < 3) {
@@ -65,12 +64,11 @@ export function SuperAdminView({ darkMode }: SuperAdminViewProps) {
 
   const refreshUsers = async () => {
     setUsersLoading(true);
-    setUsersError(null);
     try {
       const data = await adminAPI.listUsers();
       setUsers(data);
     } catch (err: any) {
-      setUsersError(err?.message || 'Unable to load users');
+      showError(err?.message || 'Impossible de charger les utilisateurs', 'Erreur');
     } finally {
       setUsersLoading(false);
     }
@@ -78,12 +76,11 @@ export function SuperAdminView({ darkMode }: SuperAdminViewProps) {
 
   const refreshStats = async () => {
     setStatsLoading(true);
-    setStatsError(null);
     try {
       const statsResponse = await adminAPI.getStats();
       setPlatformStats(statsResponse);
     } catch (err: any) {
-      setStatsError(err?.message || 'Impossible de récupérer les statistiques globales');
+      showError(err?.message || 'Impossible de récupérer les statistiques globales', 'Erreur');
     } finally {
       setStatsLoading(false);
     }
@@ -91,7 +88,7 @@ export function SuperAdminView({ darkMode }: SuperAdminViewProps) {
 
   const handleDeleteUser = async (userId: number, username: string) => {
     if (user?.id === userId) {
-      setUsersError('Impossible de supprimer votre propre compte.');
+      showWarning('Impossible de supprimer votre propre compte', 'Action interdite');
       return;
     }
 
@@ -102,19 +99,18 @@ export function SuperAdminView({ darkMode }: SuperAdminViewProps) {
     try {
       await adminAPI.deleteUser(userId);
       setUsers((prev) => prev.filter((u) => u.id !== userId));
+      showSuccess(`Utilisateur "${username}" supprimé avec succès`, 'Suppression');
     } catch (err: any) {
-      setUsersError(err?.message || 'Suppression impossible');
+      showError(err?.message || 'Suppression impossible', 'Erreur');
     }
   };
 
   const handleCreateUser = async (event: React.FormEvent) => {
     event.preventDefault();
-    setUsersError(null);
-    setUserSuccess(null);
 
     const validationError = validateNewUser();
     if (validationError) {
-      setUsersError(validationError);
+      showWarning(validationError, 'Validation');
       return;
     }
 
@@ -128,10 +124,10 @@ export function SuperAdminView({ darkMode }: SuperAdminViewProps) {
         role: newUser.role,
       });
       setUsers((prev) => [created, ...prev]);
-      setUserSuccess(`Utilisateur ${created.username} créé.`);
+      showSuccess(`Utilisateur "${created.username}" créé avec succès`, 'Création');
       setNewUser({ username: '', email: '', full_name: '', role: newUser.role, password: '' });
     } catch (err: any) {
-      setUsersError(err?.message || 'Création impossible');
+      showError(err?.message || 'Création impossible', 'Erreur');
     } finally {
       setCreatingUser(false);
     }
@@ -207,7 +203,6 @@ export function SuperAdminView({ darkMode }: SuperAdminViewProps) {
                 <RefreshCcw className="h-3.5 w-3.5" />
               </Button>
             </div>
-            {statsError && <p className="text-sm text-rose-400">{statsError}</p>}
             {statsLoading ? (
               <p className={`text-sm ${darkMode ? 'text-slate-500' : 'text-slate-600'}`}>Chargement…</p>
             ) : platformStats ? (
@@ -270,8 +265,6 @@ export function SuperAdminView({ darkMode }: SuperAdminViewProps) {
               </Button>
             </div>
           </div>
-          {usersError && <p className="text-sm text-rose-400">{usersError}</p>}
-          {userSuccess && <p className="text-sm text-emerald-400">{userSuccess}</p>}
 
           <form onSubmit={handleCreateUser} className="grid gap-3 md:grid-cols-4 bg-slate-900/10 rounded-lg p-3">
             <div className="flex flex-col gap-1">

@@ -19,14 +19,24 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table('cases', schema=None) as batch_op:
-        batch_op.add_column(sa.Column('hedgedoc_slug', sa.String(), nullable=True))
+    from sqlalchemy import inspect
+    conn = op.get_bind()
+    inspector = inspect(conn)
 
-    op.create_unique_constraint(
-        op.f('uq_cases_hedgedoc_slug'),
-        'cases',
-        ['hedgedoc_slug'],
-    )
+    # Check if cases table exists
+    if 'cases' in inspector.get_table_names():
+        columns = [c['name'] for c in inspector.get_columns('cases')]
+
+        # Only add hedgedoc_slug if it doesn't exist
+        if 'hedgedoc_slug' not in columns:
+            with op.batch_alter_table('cases', schema=None) as batch_op:
+                batch_op.add_column(sa.Column('hedgedoc_slug', sa.String(), nullable=True))
+
+            op.create_unique_constraint(
+                op.f('uq_cases_hedgedoc_slug'),
+                'cases',
+                ['hedgedoc_slug'],
+            )
 
 
 def downgrade() -> None:

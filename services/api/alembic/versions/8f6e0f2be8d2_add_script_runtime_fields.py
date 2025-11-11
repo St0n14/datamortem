@@ -19,13 +19,27 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table('custom_scripts', schema=None) as batch_op:
-        batch_op.add_column(sa.Column('python_version', sa.String(), nullable=False, server_default='3.11'))
-        batch_op.add_column(sa.Column('requirements', sa.Text(), nullable=True))
+    from sqlalchemy import inspect
+    conn = op.get_bind()
+    inspector = inspect(conn)
 
-    # Remove the temporary server default
-    with op.batch_alter_table('custom_scripts', schema=None) as batch_op:
-        batch_op.alter_column('python_version', server_default=None)
+    # Check if custom_scripts table exists
+    if 'custom_scripts' in inspector.get_table_names():
+        columns = [c['name'] for c in inspector.get_columns('custom_scripts')]
+
+        with op.batch_alter_table('custom_scripts', schema=None) as batch_op:
+            # Only add python_version if it doesn't exist
+            if 'python_version' not in columns:
+                batch_op.add_column(sa.Column('python_version', sa.String(), nullable=False, server_default='3.11'))
+
+            # Only add requirements if it doesn't exist
+            if 'requirements' not in columns:
+                batch_op.add_column(sa.Column('requirements', sa.Text(), nullable=True))
+
+        # Remove the temporary server default only if we just added it
+        if 'python_version' not in columns:
+            with op.batch_alter_table('custom_scripts', schema=None) as batch_op:
+                batch_op.alter_column('python_version', server_default=None)
 
 
 def downgrade() -> None:

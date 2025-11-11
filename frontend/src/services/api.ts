@@ -341,6 +341,15 @@ export interface SystemStatus {
 
 export const healthAPI = {
   getStatus: () => fetchAPI<SystemStatus>('/health/status'),
+  getDetailed: () => fetchAPI<{
+    postgres: any;
+    redis: any;
+    celery: any;
+    opensearch: any;
+    disk_space: any;
+    rate_limiting: any;
+    hedgedoc: any;
+  }>('/health/detailed'),
 };
 
 // Auth helper endpoints

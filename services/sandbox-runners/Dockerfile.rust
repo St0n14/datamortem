@@ -1,0 +1,44 @@
+# Sandbox Runner for Rust scripts
+# Secure, isolated environment for custom Rust programs
+
+FROM rust:1.75-slim
+
+# Install minimal system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user for script execution
+RUN useradd -m -u 1000 -s /bin/bash sandbox && \
+    mkdir -p /workspace /output && \
+    chown -R sandbox:sandbox /workspace /output
+
+# Pre-create cargo directories with correct permissions
+RUN mkdir -p /home/sandbox/.cargo && \
+    chown -R sandbox:sandbox /home/sandbox/.cargo
+
+# Set working directory
+WORKDIR /workspace
+
+# Switch to non-root user
+USER sandbox
+
+# Pre-install common forensic crates (speeds up compilation)
+# These will be cached in the user's cargo registry
+RUN cargo init --name sandbox_script && \
+    echo 'serde = { version = "1.0", features = ["derive"] }' >> Cargo.toml && \
+    echo 'serde_json = "1.0"' >> Cargo.toml && \
+    echo 'csv = "1.3"' >> Cargo.toml && \
+    echo 'chrono = "0.4"' >> Cargo.toml && \
+    cargo build --release && \
+    rm -rf src target Cargo.* && \
+    cargo cache --autoclean
+
+# Environment variables
+ENV RUST_BACKTRACE=1 \
+    CARGO_HOME=/home/sandbox/.cargo \
+    RUSTFLAGS="-C target-cpu=native"
+
+# Default command (overridden at runtime)
+CMD ["rustc", "--version"]

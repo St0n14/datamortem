@@ -53,6 +53,13 @@ class Settings(BaseSettings):
     dm_hedgedoc_slug_length: int = 32
     dm_hedgedoc_bootstrap_timeout: int = 5
 
+    # Rate Limiting Configuration
+    dm_rate_limit_enabled: bool = True
+    dm_rate_limit_login_per_minute: int = 5
+    dm_rate_limit_register_per_hour: int = 3
+    dm_rate_limit_api_per_minute: int = 100
+    dm_rate_limit_search_per_minute: int = 30
+
     @model_validator(mode="after")
     def validate_non_default_urls(self) -> "Settings":
         if self.dm_env in {"production", "staging"}:

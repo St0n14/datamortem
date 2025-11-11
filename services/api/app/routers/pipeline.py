@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, func
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict
 from datetime import datetime
 
 from ..db import SessionLocal
@@ -28,7 +28,7 @@ from ..tasks.dissect_mft import dissect_extract_mft
 # from ..tasks.extract_modules import extract_modules_task
 # etc.
 
-router = APIRouter()
+router = APIRouter(tags=["pipeline"])
 
 # registre statique tool -> callable Celery
 TASK_REGISTRY = {
@@ -113,7 +113,7 @@ def serialize_task_run(r: TaskRun) -> TaskRunOut:
 
 @router.get("/pipeline", response_model=List[PipelineModuleOut])
 def get_pipeline(
-    evidence_uid: Optional[str] = None,
+    evidence_uid: Optional[str] = Query(None, description="Filter by evidence UID"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
@@ -121,8 +121,11 @@ def get_pipeline(
     Retourne les modules d'analyse (AnalysisModule) et
     leur dernier run connu (TaskRun), filtré éventuellement
     sur une evidence. (Requires authentication)
+    
+    Optimisé pour éviter les requêtes N+1.
     """
 
+    # Récupérer tous les modules
     modules = db.execute(select(AnalysisModule)).scalars().all()
     accessible_case_ids = None
     if not is_admin_user(current_user):
@@ -133,19 +136,44 @@ def get_pipeline(
     if evidence_uid:
         # Ensure the requester can access the evidence before using it
         ensure_evidence_access_by_uid(evidence_uid, current_user, db)
+
+    # Optimisation: récupérer tous les derniers runs en une seule requête
+    # Utilisation d'une sous-requête pour obtenir le dernier run par module
+    module_ids = [m.id for m in modules]
+    if not module_ids:
+        return []
+
+    # Construire la sous-requête pour obtenir le max(id) par module_id avec les mêmes filtres
+    max_ids_subq = (
+        select(
+            TaskRun.module_id,
+            func.max(TaskRun.id).label("max_id")
+        )
+        .where(TaskRun.module_id.in_(module_ids))
+    )
+    
+    if evidence_uid:
+        max_ids_subq = max_ids_subq.where(TaskRun.evidence_uid == evidence_uid)
+    elif accessible_case_ids is not None:
+        max_ids_subq = max_ids_subq.join(Evidence, TaskRun.evidence_uid == Evidence.evidence_uid)
+        max_ids_subq = max_ids_subq.filter(Evidence.case_id.in_(accessible_case_ids))
+    
+    max_ids_subq = max_ids_subq.group_by(TaskRun.module_id).subquery()
+    
+    # Récupérer les TaskRuns correspondants en joignant avec la sous-requête
+    last_runs_query = (
+        select(TaskRun)
+        .join(max_ids_subq, TaskRun.id == max_ids_subq.c.max_id)
+    )
+    
+    # Exécuter et créer un dictionnaire module_id -> TaskRun
+    last_runs = db.execute(last_runs_query).scalars().all()
+    last_runs_by_module: Dict[int, TaskRun] = {run.module_id: run for run in last_runs if run.module_id}
+
+    # Construire la réponse
     out: List[PipelineModuleOut] = []
-
     for m in modules:
-        run_query = select(TaskRun).where(TaskRun.module_id == m.id)
-        if evidence_uid:
-            run_query = run_query.where(TaskRun.evidence_uid == evidence_uid)
-        elif accessible_case_ids is not None:
-            run_query = run_query.join(Evidence, TaskRun.evidence_uid == Evidence.evidence_uid)
-            run_query = run_query.filter(Evidence.case_id.in_(accessible_case_ids))
-        run_query = run_query.order_by(desc(TaskRun.id)).limit(1)
-
-        last_run = db.execute(run_query).scalar_one_or_none()
-
+        last_run = last_runs_by_module.get(m.id)
         out.append(
             PipelineModuleOut(
                 id=m.id,
@@ -153,7 +181,6 @@ def get_pipeline(
                 description=m.description,
                 tool=m.tool,
                 enabled=bool(m.enabled),
-
                 last_run_status=last_run.status if last_run else None,
                 last_run_started_at_utc=last_run.started_at_utc if last_run else None,
                 last_run_ended_at_utc=last_run.ended_at_utc if last_run else None,
@@ -166,7 +193,7 @@ def get_pipeline(
 
 @router.get("/pipeline/runs", response_model=List[TaskRunOut])
 def list_task_runs(
-    evidence_uid: Optional[str] = None,
+    evidence_uid: Optional[str] = Query(None, description="Filter by evidence UID"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
@@ -293,7 +320,9 @@ def run_all_pipeline(
     )
 
     created_runs = []
+    runs_to_commit = []
 
+    # Phase 1: Créer tous les TaskRuns en batch
     for mod in mods:
         tr = TaskRun(
             task_name=mod.tool or mod.name,
@@ -307,9 +336,15 @@ def run_all_pipeline(
             progress_message="queued",
         )
         db.add(tr)
-        db.commit()
+        runs_to_commit.append((tr, mod))
+    
+    # Commit unique pour tous les TaskRuns
+    db.commit()
+    
+    # Phase 2: Lancer les tâches et mettre à jour les TaskRuns
+    for tr, mod in runs_to_commit:
         db.refresh(tr)
-
+        
         task_func = TASK_REGISTRY.get(mod.tool)
         if task_func is None:
             # tool inconnu -> on finalise en erreur tout de suite
@@ -317,24 +352,26 @@ def run_all_pipeline(
             tr.ended_at_utc = datetime.utcnow()
             tr.error_message = f"Unknown tool '{mod.tool}'"
             tr.progress_message = "failed to start"
-            db.commit()
-            db.refresh(tr)
             created_runs.append(tr)
             continue
 
         try:
             async_result = task_func.delay(evidence_uid, tr.id)
             tr.celery_task_id = getattr(async_result, "id", None)
-            db.commit()
         except Exception as e:
             tr.status = "error"
             tr.ended_at_utc = datetime.utcnow()
             tr.error_message = f"launch failed: {e}"
             tr.progress_message = "failed to start"
-            db.commit()
-
-        db.refresh(tr)
+        
         created_runs.append(tr)
+    
+    # Commit unique pour toutes les mises à jour
+    db.commit()
+    
+    # Refresh final pour tous les runs
+    for tr in created_runs:
+        db.refresh(tr)
 
     return [
         {
@@ -368,7 +405,7 @@ def kill_run(
     if not run:
         raise HTTPException(status_code=404, detail="run not found")
 
-    ensure_task_run_access(run, current_user)
+    ensure_task_run_access(run, current_user, db)
 
     if run.status not in ("queued", "running"):
         raise HTTPException(status_code=400, detail="cannot kill this run")

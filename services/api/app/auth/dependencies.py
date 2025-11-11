@@ -2,6 +2,7 @@
 Authentication dependencies for FastAPI route protection.
 """
 from typing import Optional
+from datetime import datetime, timedelta
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
@@ -12,9 +13,30 @@ from ..config import settings
 from .security import decode_access_token
 from .permissions import is_admin_user, is_superadmin_user
 
+# Cache simple en mémoire pour les utilisateurs authentifiés
+# Structure: {token_hash: (user, expires_at)}
+_user_cache: dict[str, tuple[User, datetime]] = {}
+_cache_ttl_seconds = 60  # Cache valide pendant 60 secondes
+
 
 # HTTP Bearer token security scheme
 security = HTTPBearer()
+
+
+def _get_cache_key(token: str) -> str:
+    """Génère une clé de cache à partir du token (hash simple)."""
+    return str(hash(token))
+
+
+def _clean_expired_cache():
+    """Nettoie les entrées expirées du cache."""
+    now = datetime.utcnow()
+    expired_keys = [
+        key for key, (_, expires_at) in _user_cache.items()
+        if expires_at < now
+    ]
+    for key in expired_keys:
+        _user_cache.pop(key, None)
 
 
 async def get_current_user(
@@ -23,6 +45,7 @@ async def get_current_user(
 ) -> User:
     """
     Get the current authenticated user from JWT token.
+    Utilise un cache en mémoire pour éviter les requêtes DB répétées.
 
     Args:
         credentials: Bearer token from Authorization header
@@ -35,6 +58,20 @@ async def get_current_user(
         HTTPException: If token is invalid or user not found
     """
     token = credentials.credentials
+
+    # Nettoyer le cache expiré périodiquement
+    _clean_expired_cache()
+
+    # Vérifier le cache
+    cache_key = _get_cache_key(token)
+    cached = _user_cache.get(cache_key)
+    if cached:
+        user, expires_at = cached
+        if expires_at > datetime.utcnow():
+            return user
+        else:
+            # Cache expiré, on le supprime
+            _user_cache.pop(cache_key, None)
 
     # Decode token
     payload = decode_access_token(token)
@@ -84,6 +121,20 @@ async def get_current_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Email address is not verified"
         )
+
+    # Mettre en cache
+    # Note: l'objet User reste attaché à la session, mais c'est OK car
+    # on le réutilise rapidement. Pour un cache plus robuste, on pourrait
+    # utiliser expunge() mais cela nécessiterait de recharger depuis la DB.
+    expires_at = datetime.utcnow() + timedelta(seconds=_cache_ttl_seconds)
+    _user_cache[cache_key] = (user, expires_at)
+    
+    # Limiter la taille du cache pour éviter une consommation mémoire excessive
+    if len(_user_cache) > 1000:
+        # Supprimer les 100 entrées les plus anciennes
+        sorted_items = sorted(_user_cache.items(), key=lambda x: x[1][1])
+        for key, _ in sorted_items[:100]:
+            _user_cache.pop(key, None)
 
     return user
 

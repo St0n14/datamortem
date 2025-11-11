@@ -110,7 +110,7 @@ def create_evidence(
             detail="case_id does not exist"
         )
 
-    ensure_case_access(parent_case, current_user)
+    ensure_case_access(parent_case, current_user, db)
 
     # 2. Vérifier que evidence_uid n'est pas déjà pris
     existing = (
@@ -186,7 +186,7 @@ async def upload_evidence(
     if not parent_case:
         raise HTTPException(status_code=400, detail="case_id does not exist")
 
-    ensure_case_access(parent_case, current_user)
+    ensure_case_access(parent_case, current_user, db)
 
     # 2. Vérifier que evidence_uid n'est pas déjà pris
     existing = db.query(Evidence).filter_by(evidence_uid=evidence_uid).first()

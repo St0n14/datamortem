@@ -1,5 +1,8 @@
 import { useState, useEffect } from "react";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { ToastProvider } from "./contexts/ToastContext";
+import { ToastContainer } from "./components/ui/ToastContainer";
+import { useSuperAdminAlerts } from "./hooks/useSuperAdminAlerts";
 import { LoginView } from "./views/LoginView";
 import { Header } from "./components/Header";
 import { PipelineView } from "./components/PipelineView";
@@ -49,6 +52,9 @@ type TimelineBucket = {
 function AuthenticatedApp() {
   const { user } = useAuth();
   const [darkMode, setDarkMode] = useState(true);
+  
+  // Surveiller la santé des services pour les superadmins
+  useSuperAdminAlerts();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeTab, setActiveTab] =
     useState<"timeline" | "pipeline" | "rules" | "evidences" | "explorer" | "scripts" | "marketplace" | "admin">("timeline");
@@ -57,7 +63,7 @@ function AuthenticatedApp() {
   const [currentCaseId, setCurrentCaseId] = useState<string>(() => {
     return localStorage.getItem('currentCaseId') || '';
   });
-  const [selectedEvidenceUid] = useState<string | null>("evidence_pc_001");
+  const [selectedEvidenceUid] = useState<string | null>(null);
   const [cases, setCases] = useState<CaseSummary[]>([]);
   const [casesRefreshToken, setCasesRefreshToken] = useState(0);
 
@@ -166,10 +172,17 @@ function AuthenticatedApp() {
 
       setEvents(eventRows);
       setSelectedEventId(null);
-    } catch (err) {
-      console.error("failed to load events from OpenSearch", err);
-      setEvents([]);
-      setSelectedEventId(null);
+    } catch (err: any) {
+      // 404 is expected when the case hasn't been indexed yet - don't log as error
+      if (err.message && (err.message.includes('404') || err.message.includes('Not Found') || err.message.includes('Index for case'))) {
+        // Index doesn't exist yet - this is normal for new cases
+        setEvents([]);
+        setSelectedEventId(null);
+      } else {
+        console.error("failed to load events from OpenSearch", err);
+        setEvents([]);
+        setSelectedEventId(null);
+      }
     }
   };
 
@@ -190,9 +203,10 @@ function AuthenticatedApp() {
       setTimelineBuckets(data.buckets || data.timeline || []);
     } catch (err: any) {
       // 404 is expected when the case hasn't been indexed yet - don't show error
-      if (err.message && (err.message.includes('404') || err.message.includes('Not Found'))) {
+      if (err.message && (err.message.includes('404') || err.message.includes('Not Found') || err.message.includes('Index for case'))) {
         console.log("No timeline data for case:", currentCaseId);
         setTimelineBuckets([]);
+        setTimelineError(null);
       } else {
         console.error("failed to load timeline", err);
         setTimelineError("Impossible de charger la timeline (OpenSearch ?).");
@@ -258,6 +272,7 @@ function AuthenticatedApp() {
 
   return (
     <div className={`flex h-screen w-full font-sans ${darkMode ? "dark" : ""} ${bgApp}`}>
+      <ToastContainer darkMode={darkMode} position="top-right" />
       <Sidebar
         darkMode={darkMode}
         sidebarCollapsed={sidebarCollapsed}
@@ -365,7 +380,9 @@ export default function App() {
 
   return (
     <AuthProvider>
-      <AppContent />
+      <ToastProvider>
+        <AppContent />
+      </ToastProvider>
     </AuthProvider>
   );
 }

@@ -87,7 +87,7 @@ def index_task_run(
             detail=f"TaskRun {req.task_run_id} not found"
         )
 
-    ensure_task_run_access(task_run, current_user)
+    ensure_task_run_access(task_run, current_user, db)
 
     # Vérifie que le TaskRun a terminé avec succès
     if task_run.status != "success":
@@ -221,7 +221,7 @@ def get_indexing_status(
             detail=f"TaskRun {task_run_id} not found"
         )
 
-    ensure_task_run_access(task_run, current_user)
+    ensure_task_run_access(task_run, current_user, db)
 
     parser_name = task_run.module.tool if task_run.module else task_run.task_name
 

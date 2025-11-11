@@ -1,0 +1,301 @@
+services:
+  traefik:
+    image: traefik:v3.0
+    container_name: datamortem-traefik
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      # HTTPS entrypoint avec Let's Encrypt (DÉCOMMENTER pour activer HTTPS)
+      # - "--entrypoints.websecure.address=:443"
+      # Let's Encrypt configuration (DÉCOMMENTER pour activer HTTPS)
+      # - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
+      # - "--certificatesresolvers.letsencrypt.acme.email=admin@yourdomain.com"  # ⚠️ REMPLACER par votre email
+      # - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      # Redirection HTTP → HTTPS (DÉCOMMENTER pour activer HTTPS)
+      # - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      # - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      # Dashboard sécurisé (décommenter et configurer auth en production)
+      - "--api.dashboard=true"
+      - "--api.insecure=true"  # ⚠️ CHANGER EN false ET CONFIGURER AUTH EN PRODUCTION
+      - "--log.level=INFO"
+    ports:
+      - "80:80"
+      # - "443:443"  # DÉCOMMENTER pour activer HTTPS
+      - "8080:8080"  # Traefik dashboard (protéger en production)
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # - letsencrypt:/letsencrypt  # DÉCOMMENTER pour activer HTTPS
+    networks:
+      - datamortem
+    restart: unless-stopped
+
+  # PostgreSQL - Metadata database
+  postgres:
+    image: postgres:16-alpine
+    container_name: datamortem-postgres
+    env_file:
+      - ./.env.prod
+    environment:
+      POSTGRES_DB: datamortem
+      POSTGRES_USER: datamortem
+      POSTGRES_PASSWORD: ${DM_POSTGRES_PASSWORD:-datamortem_dev_password}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U datamortem"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - datamortem
+    restart: unless-stopped
+
+  # Redis - Celery Broker
+  redis:
+    image: redis:7-alpine
+    container_name: datamortem-redis
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - datamortem
+    restart: unless-stopped
+
+  # OpenSearch - Search and indexing
+  opensearch:
+    image: opensearchproject/opensearch:2.17.0
+    container_name: datamortem-opensearch
+    environment:
+      - discovery.type=single-node
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=Admin123!
+      - DISABLE_SECURITY_PLUGIN=true
+      - bootstrap.memory_lock=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    healthcheck:
+      test:
+        ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - datamortem
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.opensearch.rule=PathPrefix(`/opensearch`)"  # Pour HTTPS: Host(`yourdomain.com`) && PathPrefix(`/opensearch`)
+      - "traefik.http.routers.opensearch.entrypoints=web"  # Pour HTTPS: web,websecure
+      # Labels TLS (DÉCOMMENTER pour activer HTTPS)
+      # - "traefik.http.routers.opensearch.tls=true"
+      # - "traefik.http.routers.opensearch.tls.certresolver=letsencrypt"
+      - "traefik.http.services.opensearch.loadbalancer.server.port=9200"
+      - "traefik.http.middlewares.opensearch-stripprefix.stripprefix.prefixes=/opensearch"
+      - "traefik.http.routers.opensearch.middlewares=opensearch-stripprefix"
+
+  # OpenSearch Dashboards - Visualization interface
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:2.17.0
+    container_name: datamortem-dashboards
+    environment:
+      - OPENSEARCH_HOSTS=http://opensearch:9200
+      - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
+      - SERVER_BASEPATH=/dashboards
+      - SERVER_REWRITEBASEPATH=true
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    networks:
+      - datamortem
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dashboards.rule=PathPrefix(`/dashboards`)"  # Pour HTTPS: Host(`yourdomain.com`) && PathPrefix(`/dashboards`)
+      - "traefik.http.routers.dashboards.entrypoints=web"  # Pour HTTPS: web,websecure
+      # Labels TLS (DÉCOMMENTER pour activer HTTPS)
+      # - "traefik.http.routers.dashboards.tls=true"
+      # - "traefik.http.routers.dashboards.tls.certresolver=letsencrypt"
+      - "traefik.http.services.dashboards.loadbalancer.server.port=5601"
+
+  # Backend API - FastAPI
+  api:
+    build:
+      context: ./services/api
+      dockerfile: Dockerfile
+    container_name: datamortem-api
+    env_file:
+      - ./.env.prod
+    environment:
+      - DM_ENV=prod
+      - DM_DB_URL=${DM_DB_URL:-postgresql://datamortem:datamortem@postgres:5432/datamortem}
+      - DM_CELERY_BROKER=redis://redis:6379/0
+      - DM_CELERY_BACKEND=redis://redis:6379/1
+      - DM_OPENSEARCH_HOST=opensearch
+      - DM_OPENSEARCH_PORT=9200
+      - DM_OPENSEARCH_SCHEME=http
+      - DM_ALLOWED_ORIGINS=http://localhost,http://127.0.0.1
+      - DM_LAKE_ROOT=/lake
+      - DM_JWT_SECRET=${DM_JWT_SECRET}
+      - DM_ENABLE_OTP=${DM_ENABLE_OTP:-true}
+      - DM_HEDGEDOC_ENABLED=${DM_HEDGEDOC_ENABLED:-true}
+      - DM_HEDGEDOC_BASE_URL=http://hedgedoc:3000
+      - DM_HEDGEDOC_PUBLIC_URL=${DM_HEDGEDOC_PUBLIC_URL:-http://localhost/hedgedoc}
+    volumes:
+      - lake-data:/lake
+      - /var/run/docker.sock:/var/run/docker.sock:ro  # For sandbox Docker execution
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+      hedgedoc:
+        condition: service_started
+    networks:
+      - datamortem
+    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api.rule=PathPrefix(`/api`) || PathPrefix(`/docs`) || PathPrefix(`/redoc`) || PathPrefix(`/openapi.json`)"  # Pour HTTPS: Host(`yourdomain.com`) && (...)
+      - "traefik.http.routers.api.entrypoints=web"  # Pour HTTPS: web,websecure
+      - "traefik.http.routers.api.priority=100"
+      # Labels TLS (DÉCOMMENTER pour activer HTTPS)
+      # - "traefik.http.routers.api.tls=true"
+      # - "traefik.http.routers.api.tls.certresolver=letsencrypt"
+      - "traefik.http.services.api.loadbalancer.server.port=8000"
+
+  # Celery Worker - Background tasks
+  celery-worker:
+    build:
+      context: ./services/api
+      dockerfile: Dockerfile
+    container_name: datamortem-celery
+    env_file:
+      - ./.env.prod
+    environment:
+      - DM_ENV=prod
+      - DM_DB_URL=${DM_DB_URL:-postgresql://datamortem:datamortem@postgres:5432/datamortem}
+      - DM_CELERY_BROKER=redis://redis:6379/0
+      - DM_CELERY_BACKEND=redis://redis:6379/1
+      - DM_OPENSEARCH_HOST=opensearch
+      - DM_OPENSEARCH_PORT=9200
+      - DM_OPENSEARCH_SCHEME=http
+      - DM_LAKE_ROOT=/lake
+      - DM_ENABLE_OTP=${DM_ENABLE_OTP:-true}
+    volumes:
+      - lake-data:/lake
+      - /var/run/docker.sock:/var/run/docker.sock:ro  # For sandbox Docker execution
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+    networks:
+      - datamortem
+    command: uv run celery -A app.celery_app worker --loglevel=info --concurrency=4
+    restart: unless-stopped
+
+  # Frontend - React/Vite (Production build with Nginx)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    container_name: datamortem-frontend
+    depends_on:
+      - api
+    networks:
+      - datamortem
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=PathPrefix(`/`)"  # Pour HTTPS: Host(`yourdomain.com`)
+      - "traefik.http.routers.frontend.entrypoints=web"  # Pour HTTPS: web,websecure
+      - "traefik.http.routers.frontend.priority=1"
+      # Labels TLS (DÉCOMMENTER pour activer HTTPS)
+      # - "traefik.http.routers.frontend.tls=true"
+      # - "traefik.http.routers.frontend.tls.certresolver=letsencrypt"
+      - "traefik.http.services.frontend.loadbalancer.server.port=80"
+
+  # HedgeDoc Database
+  hedgedoc-db:
+    image: postgres:16-alpine
+    container_name: datamortem-hedgedoc-db
+    env_file:
+      - ./.env.prod
+    environment:
+      POSTGRES_DB: hedgedoc
+      POSTGRES_USER: hedgedoc
+      POSTGRES_PASSWORD: ${DM_HEDGEDOC_DB_PASSWORD:-hedgedoc_password}
+    volumes:
+      - hedgedoc-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hedgedoc"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - datamortem
+    restart: unless-stopped
+
+  # HedgeDoc - Collaborative notes
+  hedgedoc:
+    image: quay.io/hedgedoc/hedgedoc:1.10.0
+    container_name: datamortem-hedgedoc
+    env_file:
+      - ./.env.prod
+    environment:
+      - CMD_DB_URL=${DM_HEDGEDOC_DB_URL:-postgres://hedgedoc:hedgedoc_password@hedgedoc-db:5432/hedgedoc}
+      - CMD_ALLOW_FREEURL=true
+      - CMD_ALLOW_ANONYMOUS=true
+      - CMD_ALLOW_ANONYMOUS_EDITS=false
+      - CMD_DEFAULT_PERMISSION=limited
+      - CMD_PROTOCOL_USESSL=false
+      - CMD_DOMAIN=localhost
+      - CMD_URL_PATH=hedgedoc
+      - CMD_EMAIL=false
+    depends_on:
+      hedgedoc-db:
+        condition: service_healthy
+    volumes:
+      - hedgedoc-uploads:/hedgedoc/public/uploads
+    networks:
+      - datamortem
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.hedgedoc.rule=PathPrefix(`/hedgedoc`)"  # Pour HTTPS: Host(`yourdomain.com`) && PathPrefix(`/hedgedoc`)
+      - "traefik.http.routers.hedgedoc.entrypoints=web"  # Pour HTTPS: web,websecure
+      # Labels TLS (DÉCOMMENTER pour activer HTTPS)
+      # - "traefik.http.routers.hedgedoc.tls=true"
+      # - "traefik.http.routers.hedgedoc.tls.certresolver=letsencrypt"
+      - "traefik.http.services.hedgedoc.loadbalancer.server.port=3000"
+
+volumes:
+  postgres-data:
+  redis-data:
+  opensearch-data:
+  lake-data:
+  hedgedoc-db-data:
+  hedgedoc-uploads:
+  # letsencrypt:  # DÉCOMMENTER pour activer HTTPS
+
+networks:
+  datamortem:
+    driver: bridge

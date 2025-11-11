@@ -110,8 +110,8 @@ def ingest_events(base_url, token, case_id, evidence_uid, total, chunk_size=500)
         print(f'[+] Batch {batch_index}: inserted {len(batch)} events (total {sent}/{total})')
 
 # Main execution
-# Use traefik internal URL when running from inside Docker network
-base_url = 'http://traefik:8080'
+# Use localhost since we're running inside the API container
+base_url = 'http://localhost:8000'
 case_id = '$CASE_ID'
 evidence_uid = '$EVIDENCE_UID'
 events = $EVENTS

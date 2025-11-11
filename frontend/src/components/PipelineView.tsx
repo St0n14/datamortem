@@ -108,8 +108,14 @@ export function PipelineView({ selectedEvidenceUid, darkMode }: PipelineViewProp
     try {
       const data = await pipelineAPI.listModules(evidenceUid);
       setModules(data);
-    } catch (error) {
-      console.error('Failed to load modules:', error);
+    } catch (error: any) {
+      // 404 is expected when evidence doesn't exist - don't log as error
+      if (error.message && (error.message.includes('404') || error.message.includes('Not Found') || error.message.includes('Evidence not found'))) {
+        setModules([]);
+      } else {
+        console.error('Failed to load modules:', error);
+        setModules([]);
+      }
     } finally {
       setModulesLoading(false);
     }
@@ -127,8 +133,16 @@ export function PipelineView({ selectedEvidenceUid, darkMode }: PipelineViewProp
         }
       });
       setRunningTasks(running);
-    } catch (error) {
-      console.error('Failed to load task runs:', error);
+    } catch (error: any) {
+      // 404 is expected when evidence doesn't exist - don't log as error
+      if (error.message && (error.message.includes('404') || error.message.includes('Not Found') || error.message.includes('Evidence not found'))) {
+        setTaskRuns([]);
+        setRunningTasks(new Set());
+      } else {
+        console.error('Failed to load task runs:', error);
+        setTaskRuns([]);
+        setRunningTasks(new Set());
+      }
     }
   };
 

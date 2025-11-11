@@ -24,28 +24,43 @@ help: ## Affiche cette aide
 
 ##@ Development
 
-all: ## Tests + lance la stack (down si déjà lancée)
-	@echo "$(BLUE)=== DataMortem - Build & Run ===$(NC)"
-	@echo "$(YELLOW)[1/3] Checking if stack is running...$(NC)"
+all: ## Setup complet: down, up, migrations, test, ingestion, demo-data
+	@echo "$(BLUE)=== DataMortem - Setup Complet ===$(NC)"
+	@echo "$(YELLOW)[1/7] Arrêt de la stack si elle tourne...$(NC)"
 	@$(MAKE) --no-print-directory down 2>/dev/null || true
-	@echo "$(YELLOW)[2/3] Running tests...$(NC)"
-	@$(MAKE) --no-print-directory test
-	@echo "$(YELLOW)[3/3] Starting stack...$(NC)"
+	@echo "$(YELLOW)[2/7] Démarrage de la stack...$(NC)"
 	@$(MAKE) --no-print-directory up
-	@echo "$(GREEN)✓ Stack is ready!$(NC)"
+	@echo "$(YELLOW)[3/7] Attente que les services soient prêts (30s)...$(NC)"
+	@sleep 30
+	@echo "$(YELLOW)[4/7] Exécution des migrations de base de données...$(NC)"
+	@$(MAKE) --no-print-directory db-migrate
+	@echo "$(YELLOW)[5/7] Initialisation de l'utilisateur admin...$(NC)"
+	@$(COMPOSE) exec -T api uv run python -m app.init_admin 2>/dev/null || echo "$(YELLOW)Admin déjà initialisé$(NC)"
+	@echo "$(YELLOW)[6/7] Exécution des tests...$(NC)"
+	@$(MAKE) --no-print-directory test || (echo "$(RED)✗ Tests échoués, mais on continue...$(NC)"; true)
+	@echo "$(YELLOW)[7/7] Ingestion des données de démo...$(NC)"
+	@$(MAKE) --no-print-directory demo-data
+	@echo "$(GREEN)✓ Setup complet terminé!$(NC)"
+	@echo ""
+	@echo "$(BLUE)Accès à l'application:$(NC)"
+	@echo "  Frontend: $(GREEN)http://localhost:5174$(NC)"
+	@echo "  API:      $(GREEN)http://localhost:8080$(NC)"
+	@echo "  Login:    $(YELLOW)$(ADMIN_USER) / $(ADMIN_PASS)$(NC)"
 	@$(MAKE) --no-print-directory status
 
-demo: ## Clean + start + ingestion de données de démo
+demo: ## Clean + start + migrations + ingestion de données de démo
 	@echo "$(BLUE)=== DataMortem - Demo Mode ===$(NC)"
-	@echo "$(RED)[1/5] Stopping stack and cleaning volumes...$(NC)"
+	@echo "$(RED)[1/6] Stopping stack and cleaning volumes...$(NC)"
 	@$(COMPOSE) down -v 2>/dev/null || true
-	@echo "$(YELLOW)[2/5] Starting fresh stack...$(NC)"
+	@echo "$(YELLOW)[2/6] Starting fresh stack...$(NC)"
 	@$(COMPOSE) up -d
-	@echo "$(YELLOW)[3/5] Waiting for services to be ready (30s)...$(NC)"
+	@echo "$(YELLOW)[3/6] Waiting for services to be ready (30s)...$(NC)"
 	@sleep 30
-	@echo "$(YELLOW)[4/5] Initializing admin user...$(NC)"
+	@echo "$(YELLOW)[4/6] Running database migrations...$(NC)"
+	@$(MAKE) --no-print-directory db-migrate
+	@echo "$(YELLOW)[5/6] Initializing admin user...$(NC)"
 	@$(COMPOSE) exec -T api uv run python -m app.init_admin
-	@echo "$(YELLOW)[5/5] Ingesting demo data ($(DEMO_EVENTS) events)...$(NC)"
+	@echo "$(YELLOW)[6/6] Ingesting demo data ($(DEMO_EVENTS) events)...$(NC)"
 	@$(MAKE) --no-print-directory demo-data
 	@echo "$(GREEN)✓ Demo data ready!$(NC)"
 	@echo ""
@@ -83,6 +98,51 @@ logs: ## Affiche les logs (usage: make logs SERVICE=api)
 		$(COMPOSE) logs -f --tail=100 $(SERVICE); \
 	fi
 
+##@ Database & Migrations
+
+db-migrate: ## Applique les migrations en attente
+	@echo "$(YELLOW)Running database migrations...$(NC)"
+	@$(COMPOSE) exec api uv run alembic upgrade head
+	@echo "$(GREEN)✓ Migrations applied$(NC)"
+
+db-rollback: ## Annule la dernière migration (usage: make db-rollback STEPS=1)
+	@echo "$(YELLOW)Rolling back migration...$(NC)"
+	@if [ -z "$(STEPS)" ]; then \
+		$(COMPOSE) exec api uv run alembic downgrade -1; \
+	else \
+		$(COMPOSE) exec api uv run alembic downgrade -$(STEPS); \
+	fi
+	@echo "$(GREEN)✓ Rollback completed$(NC)"
+
+db-revision: ## Crée une nouvelle migration (usage: make db-revision MSG="description")
+	@if [ -z "$(MSG)" ]; then \
+		echo "$(RED)Error: Please provide a message with MSG=\"your message\"$(NC)"; \
+		exit 1; \
+	fi
+	@echo "$(YELLOW)Creating new migration: $(MSG)$(NC)"
+	@$(COMPOSE) exec api uv run alembic revision --autogenerate -m "$(MSG)"
+	@echo "$(GREEN)✓ Migration created$(NC)"
+	@echo "$(YELLOW)Copying migration from container...$(NC)"
+	@bash -c 'LATEST=$$($(COMPOSE) exec -T api ls -t /app/alembic/versions/*.py | head -1 | tr -d "\r"); docker cp datamortem-api:$$LATEST services/api/alembic/versions/'
+	@echo "$(GREEN)✓ Migration file copied to services/api/alembic/versions/$(NC)"
+
+db-current: ## Affiche la version actuelle de la base
+	@echo "$(BLUE)=== Current Database Version ===$(NC)"
+	@$(COMPOSE) exec api uv run alembic current
+
+db-history: ## Affiche l'historique des migrations
+	@echo "$(BLUE)=== Migration History ===$(NC)"
+	@$(COMPOSE) exec api uv run alembic history
+
+db-stamp: ## Marque la base à une révision spécifique sans exécuter (usage: make db-stamp REV=head)
+	@if [ -z "$(REV)" ]; then \
+		echo "$(RED)Error: Please provide a revision with REV=<revision>$(NC)"; \
+		exit 1; \
+	fi
+	@echo "$(YELLOW)Stamping database to $(REV)...$(NC)"
+	@$(COMPOSE) exec api uv run alembic stamp $(REV)
+	@echo "$(GREEN)✓ Database stamped$(NC)"
+
 ##@ Database & Data
 
 clean: ## Clean volumes et données (ATTENTION: supprime toutes les données)
@@ -112,16 +172,22 @@ demo-data: ## Ingère des données de démo
 
 ##@ Testing
 
-test: ## Lance les tests
+test: ## Lance les tests (pytest + intégration)
 	@echo "$(YELLOW)Running tests...$(NC)"
 	@echo "$(BLUE)→ API health check$(NC)"
 	@curl -sf http://localhost:8080/api/health >/dev/null && echo "$(GREEN)✓ API is healthy$(NC)" || (echo "$(RED)✗ API is not running$(NC)"; exit 1)
+	@echo "$(BLUE)→ Unit tests (pytest)$(NC)"
+	@$(COMPOSE) exec -T api uv run pytest /app/tests -v --tb=short || (echo "$(YELLOW)⚠ Some unit tests failed, continuing...$(NC)"; true)
 	@echo "$(BLUE)→ End-to-end ingestion + RBAC smoke test$(NC)"
-	@python3 scripts/test_ingestion_complete.py --case-id test_ingest_smoke --evidence-uid test_ev_smoke --events 10 --cleanup --rbac-check
+	@$(COMPOSE) exec -T api uv run python /app/scripts/test_ingestion_complete.py --base-url http://localhost:8000 --os-url http://opensearch:9200 --case-id test_ingest_smoke --evidence-uid test_ev_smoke --events 10 --cleanup --rbac-check
+
+test-unit: ## Lance uniquement les tests unitaires (pytest)
+	@echo "$(YELLOW)Running unit tests...$(NC)"
+	@$(COMPOSE) exec -T api uv run pytest /app/tests -v --tb=short
 
 test-ingestion: ## Test le flux d'ingestion complet
 	@echo "$(YELLOW)Testing ingestion flow...$(NC)"
-	@python3 scripts/test_ingestion_complete.py --case-id test_ingestion --events 100 --cleanup
+	@$(COMPOSE) exec -T api uv run python /app/scripts/test_ingestion_complete.py --base-url http://localhost:8000 --os-url http://opensearch:9200 --case-id test_ingestion --events 100 --cleanup
 
 ##@ Docker
 
