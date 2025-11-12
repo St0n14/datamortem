@@ -12,7 +12,7 @@ def sample_long_task(self, evidence_uid: str, task_run_id: int):
     ev = db.query(Evidence).filter_by(evidence_uid=evidence_uid).one()
 
     case_id = ev.case.case_id
-    out_dir = f"/tmp/datamortem/{case_id}/sample/{evidence_uid}"
+    out_dir = f"/tmp/requiem/{case_id}/sample/{evidence_uid}"
     os.makedirs(out_dir, exist_ok=True)
     output_path = os.path.join(out_dir, "sample.txt")
 

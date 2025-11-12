@@ -1,6 +1,6 @@
-# Tests pour dataMortem API
+# Tests pour Requiem API
 
-Ce répertoire contient la suite de tests pour l'API dataMortem.
+Ce répertoire contient la suite de tests pour l'API Requiem.
 
 ## Structure
 

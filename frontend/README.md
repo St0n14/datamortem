@@ -1,6 +1,6 @@
-# dataMortem Frontend
+# Requiem Frontend
 
-Interface web pour la plateforme d'analyse forensique dataMortem.
+Interface web pour la plateforme d'analyse forensique Requiem.
 
 ## Fonctionnalités
 
@@ -108,7 +108,7 @@ Le frontend communique avec ces endpoints :
 
 1. **Créer des données de test** (si pas déjà fait)
    ```bash
-   cd /home/braguette/dataMortem
+   cd /home/braguette/Requiem
    ./init-demo-data.sh
    ```
 
@@ -196,5 +196,5 @@ npm run build
 
 ## Support
 
-- Documentation backend : `/home/braguette/dataMortem/STATUS.md`
+- Documentation backend : `/home/braguette/Requiem/STATUS.md`
 - API interactive : http://localhost:8080/docs

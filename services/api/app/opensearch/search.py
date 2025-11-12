@@ -1,5 +1,5 @@
 """
-OpenSearch search helpers for dataMortem.
+OpenSearch search helpers for Requiem.
 
 Provides query builders and search utilities.
 """

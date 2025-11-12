@@ -1,8 +1,8 @@
-# dataMortem - Architecture Overview
+# Requiem - Architecture Overview
 
 ## 🎯 Vision du Projet
 
-dataMortem est une plateforme d'analyse forensique d'hôte combinant :
+Requiem est une plateforme d'analyse forensique d'hôte combinant :
 - La puissance d'exploration d'**OpenSearch**
 - La capacité de règles et timeline de **Timesketch**
 - L'orchestration DFIR avec support multi-langages
@@ -185,7 +185,7 @@ dataMortem est une plateforme d'analyse forensique d'hôte combinant :
 **Rôle :** Indexation et recherche des événements forensiques
 
 **Configuration :**
-- **Index pattern** : `datamortem-case-{case_id}-{date}`
+- **Index pattern** : `requiem-case-{case_id}-{date}`
 - **Mapping hybride** : Champs communs stricts + dynamic templates
 - **Retention** : Par case (suppression quand case clôturé)
 
@@ -347,4 +347,4 @@ Permet des workflows complexes (parser A → parser B basé sur résultats A)
 
 **Version:** 1.0  
 **Date:** 2024-11-05  
-**Auteur:** Architecture dataMortem
+**Auteur:** Architecture Requiem

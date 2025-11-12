@@ -1,4 +1,4 @@
-# Cas d'utilisation des Toasts - dataMortem
+# Cas d'utilisation des Toasts - Requiem
 
 **Date** : 2025-01-11  
 **Système** : ✅ Implémenté et prêt à l'emploi
@@ -7,7 +7,7 @@
 
 ## 📋 Vue d'ensemble
 
-Le système de toasts est **déjà implémenté** et fonctionnel. Voici les cas d'utilisation concrets dans votre application dataMortem.
+Le système de toasts est **déjà implémenté** et fonctionnel. Voici les cas d'utilisation concrets dans votre application Requiem.
 
 ---
 

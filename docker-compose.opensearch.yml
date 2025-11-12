@@ -3,7 +3,7 @@ version: '3.8'
 services:
   opensearch:
     image: opensearchproject/opensearch:2.17.0
-    container_name: datamortem-opensearch
+    container_name: requiem-opensearch
     environment:
       - discovery.type=single-node
       - OPENSEARCH_INITIAL_ADMIN_PASSWORD=Admin123!
@@ -23,11 +23,11 @@ services:
     volumes:
       - opensearch-data:/usr/share/opensearch/data
     networks:
-      - datamortem
+      - requiem
 
   opensearch-dashboards:
     image: opensearchproject/opensearch-dashboards:2.17.0
-    container_name: datamortem-dashboards
+    container_name: requiem-dashboards
     environment:
       - OPENSEARCH_HOSTS=http://opensearch:9200
       - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
@@ -36,10 +36,10 @@ services:
     depends_on:
       - opensearch
     networks:
-      - datamortem
+      - requiem
 
 volumes:
   opensearch-data:
 
 networks:
-  datamortem:
+  requiem:

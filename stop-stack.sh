@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# Script d'arrêt de la stack dataMortem
+# Script d'arrêt de la stack Requiem
 # Usage: ./stop-stack.sh
 
 echo "=================================================="
-echo "🛑 ARRÊT STACK dataMortem"
+echo "🛑 ARRÊT STACK Requiem"
 echo "=================================================="
 echo ""
 

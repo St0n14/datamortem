@@ -1,4 +1,4 @@
-# Guide d'utilisation des Toasts - dataMortem
+# Guide d'utilisation des Toasts - Requiem
 
 **Date** : 2025-01-11  
 **Statut** : ✅ Système de toasts implémenté

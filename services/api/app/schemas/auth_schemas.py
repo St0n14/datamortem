@@ -18,14 +18,14 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    password: str = Field(..., min_length=8, max_length=100)
+    password: str = Field(..., min_length=12, max_length=128, description="Password must meet security requirements")
 
 
 class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
     username: Optional[str] = Field(None, min_length=3, max_length=50)
     full_name: Optional[str] = None
-    password: Optional[str] = Field(None, min_length=8, max_length=100)
+    password: Optional[str] = Field(None, min_length=12, max_length=128, description="Password must meet security requirements")
     role: Optional[RoleName] = None
     is_active: Optional[bool] = None
 
@@ -110,7 +110,7 @@ class AdminCreateUserRequest(UserCreate):
 class PasswordChangeRequest(BaseModel):
     """Password change request"""
     current_password: str
-    new_password: str = Field(..., min_length=8, max_length=100)
+    new_password: str = Field(..., min_length=12, max_length=128, description="Password must meet security requirements")
 
 
 class PasswordResetRequest(BaseModel):

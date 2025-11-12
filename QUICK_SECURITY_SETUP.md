@@ -17,7 +17,7 @@ DM_HEDGEDOC_PUBLIC_URL=https://yourdomain.com/hedgedoc
 DM_ENABLE_OTP=true
 DM_HEDGEDOC_ENABLED=true
 DM_HEDGEDOC_BASE_URL=http://hedgedoc:3000
-DM_DB_URL=postgresql://datamortem:${DM_POSTGRES_PASSWORD}@postgres:5432/datamortem
+DM_DB_URL=postgresql://requiem:${DM_POSTGRES_PASSWORD}@postgres:5432/requiem
 DM_CELERY_BROKER=redis://redis:6379/0
 DM_CELERY_BACKEND=redis://redis:6379/1
 DM_OPENSEARCH_HOST=opensearch
@@ -37,7 +37,7 @@ sed -i.bak "s|DM_JWT_SECRET=.*|DM_JWT_SECRET=$JWT_SECRET|" .env.prod
 sed -i.bak "s|DM_POSTGRES_PASSWORD=.*|DM_POSTGRES_PASSWORD=$POSTGRES_PWD|" .env.prod
 sed -i.bak "s|DM_HEDGEDOC_DB_PASSWORD=.*|DM_HEDGEDOC_DB_PASSWORD=$HEDGEDOC_PWD|" .env.prod
 sed -i.bak "s|DM_OPENSEARCH_PASSWORD=.*|DM_OPENSEARCH_PASSWORD=$OPENSEARCH_PWD|" .env.prod
-sed -i.bak "s|DM_DB_URL=.*|DM_DB_URL=postgresql://datamortem:$POSTGRES_PWD@postgres:5432/datamortem|" .env.prod
+sed -i.bak "s|DM_DB_URL=.*|DM_DB_URL=postgresql://requiem:$POSTGRES_PWD@postgres:5432/requiem|" .env.prod
 
 # Vérifier que le fichier est bien créé
 cat .env.prod

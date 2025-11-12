@@ -1,13 +1,13 @@
 #!/bin/bash
 
-# Script de test des endpoints OpenSearch de l'API dataMortem
+# Script de test des endpoints OpenSearch de l'API Requiem
 # Usage: ./test_api_search.sh
 
 API_BASE="http://localhost:8080/api"
 CASE_ID="test_case_001"
 
 echo "=================================================="
-echo "🧪 TESTS API OPENSEARCH - dataMortem"
+echo "🧪 TESTS API OPENSEARCH - Requiem"
 echo "=================================================="
 echo ""
 

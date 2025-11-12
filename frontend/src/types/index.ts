@@ -1,4 +1,4 @@
-// API Types for dataMortem
+// API Types for Requiem
 
 export type UserRole = 'superadmin' | 'admin' | 'analyst' | 'viewer';
 

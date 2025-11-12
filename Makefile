@@ -18,14 +18,14 @@ NC := \033[0m # No Color
 ##@ General
 
 help: ## Affiche cette aide
-	@echo "$(BLUE)DataMortem - Makefile$(NC)"
+	@echo "$(BLUE)Requiem - Makefile$(NC)"
 	@echo ""
 	@awk 'BEGIN {FS = ":.*##"; printf "Usage:\n  make $(GREEN)<target>$(NC)\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  $(GREEN)%-15s$(NC) %s\n", $$1, $$2 } /^##@/ { printf "\n$(BLUE)%s$(NC)\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
 ##@ Development
 
 all: ## Setup complet: down, up, migrations, test, ingestion, demo-data
-	@echo "$(BLUE)=== DataMortem - Setup Complet ===$(NC)"
+	@echo "$(BLUE)=== Requiem - Setup Complet ===$(NC)"
 	@echo "$(YELLOW)[1/7] Arrêt de la stack si elle tourne...$(NC)"
 	@$(MAKE) --no-print-directory down 2>/dev/null || true
 	@echo "$(YELLOW)[2/7] Démarrage de la stack...$(NC)"
@@ -49,7 +49,7 @@ all: ## Setup complet: down, up, migrations, test, ingestion, demo-data
 	@$(MAKE) --no-print-directory status
 
 demo: ## Clean + start + migrations + ingestion de données de démo
-	@echo "$(BLUE)=== DataMortem - Demo Mode ===$(NC)"
+	@echo "$(BLUE)=== Requiem - Demo Mode ===$(NC)"
 	@echo "$(RED)[1/6] Stopping stack and cleaning volumes...$(NC)"
 	@$(COMPOSE) down -v 2>/dev/null || true
 	@echo "$(YELLOW)[2/6] Starting fresh stack...$(NC)"
@@ -123,7 +123,7 @@ db-revision: ## Crée une nouvelle migration (usage: make db-revision MSG="descr
 	@$(COMPOSE) exec api uv run alembic revision --autogenerate -m "$(MSG)"
 	@echo "$(GREEN)✓ Migration created$(NC)"
 	@echo "$(YELLOW)Copying migration from container...$(NC)"
-	@bash -c 'LATEST=$$($(COMPOSE) exec -T api ls -t /app/alembic/versions/*.py | head -1 | tr -d "\r"); docker cp datamortem-api:$$LATEST services/api/alembic/versions/'
+	@bash -c 'LATEST=$$($(COMPOSE) exec -T api ls -t /app/alembic/versions/*.py | head -1 | tr -d "\r"); docker cp requiem-api:$$LATEST services/api/alembic/versions/'
 	@echo "$(GREEN)✓ Migration file copied to services/api/alembic/versions/$(NC)"
 
 db-current: ## Affiche la version actuelle de la base
@@ -210,12 +210,12 @@ shell-frontend: ## Ouvre un shell dans le container frontend
 	@$(COMPOSE) exec frontend sh
 
 db-shell: ## Ouvre un shell PostgreSQL
-	@$(COMPOSE) exec postgres psql -U datamortem -d datamortem
+	@$(COMPOSE) exec postgres psql -U requiem -d requiem
 
 opensearch-shell: ## Ouvre un shell OpenSearch (curl)
 	@echo "$(BLUE)OpenSearch shell - Examples:$(NC)"
 	@echo "  curl http://localhost:9200/_cat/indices?v"
-	@echo "  curl http://localhost:9200/datamortem-case-*/\_search?size=10"
+	@echo "  curl http://localhost:9200/requiem-case-*/\_search?size=10"
 	@$(COMPOSE) exec api bash
 
 check-opensearch: ## Vérifie l'état d'OpenSearch
@@ -227,7 +227,7 @@ check-opensearch: ## Vérifie l'état d'OpenSearch
 
 check-postgres: ## Vérifie l'état de PostgreSQL
 	@echo "$(BLUE)=== PostgreSQL Status ===$(NC)"
-	@$(COMPOSE) exec postgres pg_isready -U datamortem
+	@$(COMPOSE) exec postgres pg_isready -U requiem
 
 ##@ Quick Access
 

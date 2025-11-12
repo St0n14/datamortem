@@ -76,16 +76,16 @@ def send_verification_email(to_email: str, username: str, token: str) -> None:
         return
 
     link = _build_verification_link(token)
-    subject = "Verify your dataMortem account"
+    subject = "Verify your Requiem account"
     text_body = (
         f"Hello {username},\n\n"
-        "Please verify your email address to activate your dataMortem account.\n"
+        "Please verify your email address to activate your Requiem account.\n"
         f"Verification link: {link}\n\n"
         "If you did not request this account, please ignore this email."
     )
     html_body = (
         f"<p>Hello <strong>{username}</strong>,</p>"
-        "<p>Please verify your email address to activate your dataMortem account.</p>"
+        "<p>Please verify your email address to activate your Requiem account.</p>"
         f"<p><a href=\"{link}\">Verify my email</a></p>"
         "<p>If you did not request this account, you can ignore this email.</p>"
     )

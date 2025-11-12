@@ -307,6 +307,33 @@ export const adminAPI = {
   getStats: () => fetchAPI<AdminStats>('/admin/stats'),
 };
 
+// Feature Flags API
+export interface FeatureFlag {
+  id: number;
+  feature_key: string;
+  enabled: boolean;
+  description: string | null;
+  updated_at_utc: string;
+  updated_by_id: number | null;
+}
+
+export const featureFlagsAPI = {
+  list: () => fetchAPI<FeatureFlag[]>('/feature-flags'),
+  get: (featureKey: string) => fetchAPI<FeatureFlag>(`/feature-flags/${featureKey}`),
+  getPublic: (featureKey: string) => {
+    // Public endpoint that doesn't require authentication
+    const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) || 'http://localhost:8080/api';
+    return fetch(`${API_BASE_URL}/feature-flags/public/${featureKey}`)
+      .then((res) => res.json())
+      .then((data) => ({ feature_key: data.feature_key, enabled: data.enabled } as { feature_key: string; enabled: boolean }));
+  },
+  update: (featureKey: string, enabled: boolean) =>
+    fetchAPI<FeatureFlag>(`/feature-flags/${featureKey}`, {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    }),
+};
+
 // Rules API
 export const rulesAPI = {
   list: () => fetchAPI<Rule[]>('/rules'),

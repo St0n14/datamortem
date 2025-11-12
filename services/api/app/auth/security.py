@@ -37,15 +37,21 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def get_password_hash(password: str) -> str:
     """
-    Hash a password using bcrypt.
+    Hash a password using bcrypt with increased cost factor for better security.
 
     Args:
         password: Plain text password
 
     Returns:
         Bcrypt hashed password
+
+    Note:
+        Uses rounds=12 (default is 10) for better security against brute-force attacks.
+        This increases hashing time but significantly improves security.
     """
-    salt = bcrypt.gensalt()
+    # rounds=12 provides better security (2^12 = 4096 iterations)
+    # This makes brute-force attacks significantly slower while keeping reasonable performance
+    salt = bcrypt.gensalt(rounds=12)
     hashed = bcrypt.hashpw(password.encode("utf-8"), salt)
     return hashed.decode("utf-8")
 

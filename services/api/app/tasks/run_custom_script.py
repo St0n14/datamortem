@@ -21,14 +21,14 @@ from ..models import CustomScript, Evidence, TaskRun
 # Language-specific configuration
 LANGUAGE_CONFIG = {
     "python": {
-        "image": "datamortem-sandbox-python",
+        "image": "requiem-sandbox-python",
         "dockerfile": "Dockerfile.python",
         "source_filename": "script.py",
         "default_entry_point": "python script.py",
         "build_required": False,
     },
     "rust": {
-        "image": "datamortem-sandbox-rust",
+        "image": "requiem-sandbox-rust",
         "dockerfile": "Dockerfile.rust",
         "source_filename": "src/main.rs",
         "default_entry_point": "./target/release/script",
@@ -36,7 +36,7 @@ LANGUAGE_CONFIG = {
         "build_required": True,
     },
     "go": {
-        "image": "datamortem-sandbox-go",
+        "image": "requiem-sandbox-go",
         "dockerfile": "Dockerfile.go",
         "source_filename": "main.go",
         "default_entry_point": "./script",

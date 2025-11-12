@@ -1,4 +1,4 @@
-# ✅ Test d'intégration complet - dataMortem
+# ✅ Test d'intégration complet - Requiem
 
 **Date:** 2025-11-06
 **Test:** Pipeline → Indexation → Recherche OpenSearch
@@ -7,7 +7,7 @@
 
 ## 📋 Résumé du test
 
-Le test d'intégration complet a été effectué avec succès ! Tous les composants de la stack dataMortem fonctionnent correctement.
+Le test d'intégration complet a été effectué avec succès ! Tous les composants de la stack Requiem fonctionnent correctement.
 
 ### ✅ Services opérationnels
 
@@ -39,7 +39,7 @@ Local Path: /tmp/test_integration_disk.dd
 ```
 
 ### 3. ✅ Génération de données synthétiques
-- **Fichier créé:** `/tmp/datamortem/integration_test_2025/test_data/evidence_integration_test_2025/test_events.parquet`
+- **Fichier créé:** `/tmp/requiem/integration_test_2025/test_data/evidence_integration_test_2025/test_events.parquet`
 - **Nombre d'événements:** 100
 - **Types d'événements:** file, process, registry
 - **Format:** Parquet (pyarrow)
@@ -67,7 +67,7 @@ Local Path: /tmp/test_integration_disk.dd
 TaskRun ID: 6
 Status: success
 Module: sample_long_task
-Output: /tmp/datamortem/integration_test_2025/.../test_events.parquet
+Output: /tmp/requiem/integration_test_2025/.../test_events.parquet
 ```
 
 ### 5. ✅ Indexation dans OpenSearch
@@ -78,7 +78,7 @@ Body: {"task_run_id": 6}
 Résultat:
 - 100 événements indexés
 - 0 échecs
-- Index créé: datamortem-case-integration_test_2025
+- Index créé: requiem-case-integration_test_2025
 - Temps d'indexation: ~1.15s
 ```
 
@@ -203,7 +203,7 @@ Ouvrez votre navigateur sur **http://localhost:5174**
 
 ### 1. Démarrer tous les services
 ```bash
-cd /home/braguette/dataMortem
+cd /home/braguette/Requiem
 
 # Services Docker
 docker-compose up -d
@@ -249,7 +249,7 @@ Ouvrir: http://localhost:5174
 
 ## 📚 Documentation
 
-- **Architecture:** `dataMortem_architecture_overview.md`
+- **Architecture:** `Requiem_architecture_overview.md`
 - **Setup complet:** `STACK_SETUP.md`
 - **Quick start:** `QUICK_START.md`
 - **Status services:** `STATUS.md`
@@ -262,7 +262,7 @@ Ouvrir: http://localhost:5174
 
 **Le test d'intégration est un succès !** 🎉
 
-La stack dataMortem est entièrement opérationnelle avec :
+La stack Requiem est entièrement opérationnelle avec :
 - ✅ Pipeline d'analyse forensique fonctionnel
 - ✅ Indexation automatique dans OpenSearch
 - ✅ Interface web moderne pour explorer les données

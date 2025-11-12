@@ -1,5 +1,5 @@
 """
-OpenSearch module for dataMortem.
+OpenSearch module for Requiem.
 
 Provides indexing, search, and management capabilities for forensic artifacts.
 """

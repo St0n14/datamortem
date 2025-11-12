@@ -1,4 +1,4 @@
-# dataMortem - État du projet
+# Requiem - État du projet
 
 **Dernière mise à jour** : 2025-11-11  
 **Production Readiness** : ~60-65% (+15-20 points)  

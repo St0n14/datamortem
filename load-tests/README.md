@@ -5,7 +5,7 @@ Ces scénarios K6 permettent de valider que Traefik + plusieurs API répondent c
 ## Prérequis
 
 - [k6](https://k6.io/docs/getting-started/installation/) installé en local
-- Stack dataMortem démarrée via `./start-stack.sh` (Traefik écoute sur `http://localhost:8080`)
+- Stack Requiem démarrée via `./start-stack.sh` (Traefik écoute sur `http://localhost:8080`)
 - Facultatif : augmenter le nombre de réplicas API `docker-compose up -d --scale api=2`
 
 ## Scripts disponibles
@@ -44,6 +44,6 @@ k6 run load-tests/search-health-throughput.js
 
 ## Exploitation
 
-- Surveiller `docker logs datamortem-traefik` et `datamortem-api` pour vérifier le round-robin.
+- Surveiller `docker logs requiem-traefik` et `requiem-api` pour vérifier le round-robin.
 - Ajuster `docker-compose up -d --scale api=<n>` pour voir comment la stack encaisse la montée en charge.
 - Les métriques k6 (`http_req_duration`, `http_req_failed`, tendances custom) permettent de comparer avant/après optimisation.

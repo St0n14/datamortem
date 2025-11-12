@@ -391,7 +391,7 @@ async def health_check():
     """
     return {
         "status": "healthy",
-        "service": "datamortem-api",
+        "service": "requiem-api",
         "message": "API is running"
     }
 

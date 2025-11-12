@@ -149,7 +149,7 @@ def check_postgresql(base_url: str, token: str, case_id: str) -> int:
 
 def delete_opensearch_index(os_url: str, case_id: str):
     """Delete OpenSearch index for a case."""
-    index_name = f"datamortem-case-{case_id}"
+    index_name = f"requiem-case-{case_id}"
     try:
         resp = requests.delete(f"{os_url}/{index_name}", timeout=5)
         if resp.status_code == 200:
@@ -160,7 +160,7 @@ def delete_opensearch_index(os_url: str, case_id: str):
 
 def check_opensearch(os_url: str, case_id: str) -> int:
     """Check events in OpenSearch."""
-    index_name = f"datamortem-case-{case_id}"
+    index_name = f"requiem-case-{case_id}"
 
     # Refresh index first
     try:

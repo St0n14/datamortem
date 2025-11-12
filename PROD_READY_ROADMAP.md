@@ -1,4 +1,4 @@
-# Roadmap Production Ready - dataMortem
+# Roadmap Production Ready - Requiem
 
 **Date** : 2025-01-11  
 **État actuel** : ~75-80% production-ready  
@@ -182,7 +182,7 @@ pip install bandit
 bandit -r services/api/app
 
 # Trivy (Docker)
-trivy image datamortem-api:latest
+trivy image requiem-api:latest
 
 # npm audit (Frontend)
 cd frontend && npm audit

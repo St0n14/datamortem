@@ -40,9 +40,10 @@ export function MarketplaceView({ darkMode }: MarketplaceViewProps) {
   const loadMyScripts = async () => {
     try {
       const data = await scriptsAPI.myScripts();
+      console.log('[MarketplaceView] Loaded my scripts:', data);
       setMyScripts(data);
     } catch (err: any) {
-      console.error('Failed to load installed scripts:', err);
+      console.error('[MarketplaceView] Failed to load installed scripts:', err);
     }
   };
 
@@ -58,6 +59,8 @@ export function MarketplaceView({ darkMode }: MarketplaceViewProps) {
         setSuccess('Script installé! Il est maintenant disponible dans Pipeline.');
       }
       await loadMyScripts();
+      // Notifier PipelineView qu'un script a été installé
+      window.dispatchEvent(new CustomEvent('script-installed', { detail: { scriptId } }));
     } catch (err: any) {
       setError(err.message || "Impossible d'installer le script.");
     } finally {

@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     dm_smtp_use_tls: bool = True
     dm_email_sender: Optional[str] = None
     dm_enable_otp: bool = False
-    dm_otp_issuer: str = "dataMortem"
+    dm_otp_issuer: str = "Requiem"
 
     # OpenSearch Configuration
     dm_opensearch_host: str = "localhost"
@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     dm_opensearch_ssl_show_warn: bool = False
 
     # Index Configuration
-    dm_opensearch_index_prefix: str = "datamortem"
+    dm_opensearch_index_prefix: str = "requiem"
     dm_opensearch_shard_count: int = 1
     dm_opensearch_replica_count: int = 0
     dm_opensearch_batch_size: int = 500

@@ -98,20 +98,20 @@ cpu_limit: str                 # Ex: "1.5" pour 1.5 cores
 ```python
 LANGUAGE_CONFIG = {
     "python": {
-        "image": "datamortem-sandbox-python",
+        "image": "requiem-sandbox-python",
         "source_filename": "script.py",
         "default_entry_point": "python script.py",
         "build_required": False,
     },
     "rust": {
-        "image": "datamortem-sandbox-rust",
+        "image": "requiem-sandbox-rust",
         "source_filename": "src/main.rs",
         "default_entry_point": "./target/release/script",
         "default_build_command": "cargo build --release",
         "build_required": True,
     },
     "go": {
-        "image": "datamortem-sandbox-go",
+        "image": "requiem-sandbox-go",
         "source_filename": "main.go",
         "default_entry_point": "./script",
         "default_build_command": "go build -o script main.go",
@@ -229,7 +229,7 @@ Documentation/
 
 ```
 services/api/app/models.py         # Nouveaux champs CustomScript
-dataMortem_architecture_overview.md # Mise à jour avec sandbox
+Requiem_architecture_overview.md # Mise à jour avec sandbox
 ```
 
 ## État actuel
@@ -237,10 +237,10 @@ dataMortem_architecture_overview.md # Mise à jour avec sandbox
 ### Images Docker construites
 
 ```bash
-$ docker images | grep datamortem-sandbox
-datamortem-sandbox-python   3.11    [built]   ~500MB
-datamortem-sandbox-rust     1.75    [ready]   ~2GB (avec cargo cache)
-datamortem-sandbox-go       1.21    [ready]   ~800MB
+$ docker images | grep requiem-sandbox
+requiem-sandbox-python   3.11    [built]   ~500MB
+requiem-sandbox-rust     1.75    [ready]   ~2GB (avec cargo cache)
+requiem-sandbox-go       1.21    [ready]   ~800MB
 ```
 
 ### Migration de base de données
@@ -428,7 +428,7 @@ docker run --rm \
   -e CASE_ID=test -e EVIDENCE_UID=test -e OUTPUT_DIR=/output \
   --user sandbox --network none --memory 512m --cpus 1.0 \
   --read-only --tmpfs /tmp:rw,noexec,nosuid,size=100m \
-  datamortem-sandbox-python:3.11 \
+  requiem-sandbox-python:3.11 \
   python /workspace/test_python.py
 ```
 
@@ -438,7 +438,7 @@ docker run --rm \
 
 1. **Scanner les images Docker** pour vulnérabilités
    ```bash
-   docker scan datamortem-sandbox-python:3.11
+   docker scan requiem-sandbox-python:3.11
    ```
 
 2. **Tester avec scripts malveillants** (fork bomb, memory leak, infinite loop)
@@ -487,4 +487,4 @@ Le système est maintenant prêt pour :
 **Responsable** : Configuration initiale Sandbox multi-langages
 **Date** : 2025-11-11
 **Statut** : ✅ Fonctionnel (Sandbox : 90%, Production-ready : 60-65%)
-**Auteur** : dataMortem Dev Team
+**Auteur** : Requiem Dev Team

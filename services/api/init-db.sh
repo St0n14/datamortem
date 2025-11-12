@@ -3,7 +3,7 @@
 # Runs Alembic migrations and creates default admin user
 
 echo "=========================================="
-echo "🚀 Initializing dataMortem Database"
+echo "🚀 Initializing Requiem Database"
 echo "=========================================="
 echo ""
 

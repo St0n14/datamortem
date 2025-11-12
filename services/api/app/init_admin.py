@@ -1,5 +1,5 @@
 """
-Initialize default admin user for dataMortem.
+Initialize default admin user for Requiem.
 Run this script after database migrations to create the default administrator.
 """
 from app.db import SessionLocal

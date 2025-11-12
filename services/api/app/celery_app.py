@@ -6,7 +6,7 @@ from .config import settings
 # En prod: redis:// avec worker dédié
 
 celery_app = Celery(
-    "dataMortem",
+    "Requiem",
     broker=settings.dm_celery_broker,
     backend=settings.dm_celery_backend,
     include=[

@@ -1,6 +1,6 @@
-# Guide de démarrage de la stack complète dataMortem
+# Guide de démarrage de la stack complète Requiem
 
-Ce guide explique comment démarrer toute la stack dataMortem avec OpenSearch intégré.
+Ce guide explique comment démarrer toute la stack Requiem avec OpenSearch intégré.
 
 ## 🎯 Architecture
 
@@ -93,10 +93,10 @@ Attendez ~30 secondes que OpenSearch démarre.
 **Vérifications:**
 ```bash
 # PostgreSQL
-docker exec datamortem-postgres pg_isready -U datamortem
+docker exec requiem-postgres pg_isready -U requiem
 
 # Redis
-docker exec datamortem-redis redis-cli ping
+docker exec requiem-redis redis-cli ping
 
 # OpenSearch
 curl http://localhost:9200
@@ -115,7 +115,7 @@ cat services/api/.env
 Devrait contenir:
 ```env
 DM_ENV=development
-DM_DB_URL=postgresql://datamortem:datamortem_dev_password@localhost:5432/datamortem
+DM_DB_URL=postgresql://requiem:requiem_dev_password@localhost:5432/requiem
 DM_CELERY_BROKER=redis://localhost:6379/0
 DM_CELERY_BACKEND=redis://localhost:6379/1
 DM_OPENSEARCH_HOST=localhost
@@ -161,7 +161,7 @@ uv run python -c "from app.db import Base, engine; Base.metadata.create_all(bind
 **Vérification:**
 ```bash
 # Connexion à PostgreSQL
-docker exec -it datamortem-postgres psql -U datamortem -d datamortem
+docker exec -it requiem-postgres psql -U requiem -d requiem
 
 # Lister les tables
 \dt
@@ -347,7 +347,7 @@ const summary = await response.json();
   },
   opensearch: {
     document_count: 15420,
-    index_name: "datamortem-case-case_123"
+    index_name: "requiem-case-case_123"
   }
 }
 */
@@ -417,7 +417,7 @@ Voir `python scripts/demo_data.py --help` pour les options (`--base-url`, `--chu
 
 ```bash
 # Vérifier que PostgreSQL est up
-docker logs datamortem-postgres
+docker logs requiem-postgres
 
 # Redémarrer
 docker-compose restart postgres
@@ -427,7 +427,7 @@ docker-compose restart postgres
 
 ```bash
 # Vérifier Redis
-docker exec datamortem-redis redis-cli ping
+docker exec requiem-redis redis-cli ping
 
 # Vérifier la configuration
 cd services/api
@@ -440,10 +440,10 @@ uv run python -c "from app.config import settings; print(settings.dm_celery_brok
 
 ```bash
 # Vérifier les logs
-docker logs datamortem-opensearch
+docker logs requiem-opensearch
 
 # Vérifier la mémoire allouée
-docker stats datamortem-opensearch
+docker stats requiem-opensearch
 
 # Augmenter la mémoire si besoin (modifier docker-compose.yml)
 # OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g

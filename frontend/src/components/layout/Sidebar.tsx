@@ -1,6 +1,7 @@
 import { BrandMark } from "../BrandMark";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
+import { useAuth } from "../../contexts/AuthContext";
 import type { Role } from "../../contexts/AuthContext";
 import {
   Clock,
@@ -11,6 +12,8 @@ import {
   FileCode2,
   ShieldCheck,
   UserCheck,
+  User,
+  LogOut,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
@@ -24,7 +27,7 @@ type CaseSummary = {
 };
 
 type NavItem = {
-  key: "timeline" | "explorer" | "evidences" | "pipeline" | "marketplace" | "scripts" | "rules" | "admin";
+  key: "timeline" | "explorer" | "evidences" | "pipeline" | "marketplace" | "scripts" | "rules" | "admin" | "profile";
   label: string;
   icon: JSX.Element;
 };
@@ -37,10 +40,11 @@ interface SidebarProps {
   currentCaseId: string;
   onCaseSelect: (caseId: string) => void;
   selectedEvidenceUid: string | null;
-  activeTab: "timeline" | "explorer" | "evidences" | "pipeline" | "marketplace" | "scripts" | "rules" | "admin";
-  onTabChange: (tab: "timeline" | "explorer" | "evidences" | "pipeline" | "marketplace" | "scripts" | "rules" | "admin") => void;
+  activeTab: "timeline" | "explorer" | "evidences" | "pipeline" | "marketplace" | "scripts" | "rules" | "admin" | "profile";
+  onTabChange: (tab: "timeline" | "explorer" | "evidences" | "pipeline" | "marketplace" | "scripts" | "rules" | "admin" | "profile") => void;
   userRole?: Role;
   eventsCount: number;
+  featureFlags?: Record<string, boolean>;
 }
 
 export function Sidebar({
@@ -55,7 +59,9 @@ export function Sidebar({
   onTabChange,
   userRole,
   eventsCount,
+  featureFlags = {},
 }: SidebarProps) {
+  const { logout } = useAuth();
   const textWeak = darkMode ? "text-slate-500" : "text-slate-600";
   const isSuperAdmin = userRole === "superadmin";
 
@@ -63,8 +69,8 @@ export function Sidebar({
     { key: "timeline", label: "Timeline", icon: <Clock className="h-4 w-4" /> },
     ...(!isSuperAdmin ? [{ key: "explorer", label: "Explorer", icon: <Search className="h-4 w-4" /> }] : []),
     { key: "evidences", label: "Evidences", icon: <HardDrive className="h-4 w-4" /> },
-    { key: "pipeline", label: "Pipeline", icon: <Wrench className="h-4 w-4" /> },
-    { key: "marketplace", label: "Marketplace", icon: <Store className="h-4 w-4" /> },
+    ...(featureFlags.pipeline !== false ? [{ key: "pipeline", label: "Pipeline", icon: <Wrench className="h-4 w-4" /> }] : []),
+    ...(featureFlags.marketplace !== false ? [{ key: "marketplace", label: "Marketplace", icon: <Store className="h-4 w-4" /> }] : []),
     { key: "scripts", label: "Scripts", icon: <FileCode2 className="h-4 w-4" /> },
     { key: "rules", label: "Rules", icon: <ShieldCheck className="h-4 w-4" /> },
     ...(isSuperAdmin ? [{ key: "admin", label: "Admin", icon: <UserCheck className="h-4 w-4" /> }] : []),
@@ -72,7 +78,7 @@ export function Sidebar({
 
   return (
     <aside
-      className={`relative flex flex-col gap-4 border-r px-3 py-4 transition-all duration-300 ${
+      className={`relative flex flex-col h-full gap-4 border-r px-3 py-4 transition-all duration-300 ${
         sidebarCollapsed ? "w-16" : "w-56"
       } ${darkMode ? "border-slate-900 bg-slate-950/90" : "border-gray-200 bg-slate-50"}`}
     >
@@ -135,7 +141,7 @@ export function Sidebar({
         </p>
       </div>
 
-      <div className="space-y-2">
+      <div className="flex-1 space-y-2 overflow-y-auto">
         <p className={`text-xs font-semibold uppercase tracking-wide ${darkMode ? "text-slate-400" : "text-gray-600"} ${sidebarCollapsed ? "hidden" : ""}`}>
           Navigation
         </p>
@@ -171,9 +177,43 @@ export function Sidebar({
         </div>
       </div>
 
-      <div className={`mt-auto space-y-1 rounded-xl border px-3 py-3 text-xs ${sidebarCollapsed ? "hidden" : ""}`}>
-        <p className={textWeak}>Events loaded: {eventsCount}</p>
-        <p className={textWeak}>Active tab: {activeTab}</p>
+      <div className="mt-auto space-y-2 shrink-0 pt-4 border-t border-slate-800">
+        {/* Bouton utilisateur */}
+        <button
+          onClick={() => onTabChange("profile")}
+          className={`w-full flex items-center ${sidebarCollapsed ? "justify-center" : "gap-2"} rounded-lg border px-2.5 py-1.5 text-xs font-medium transition ${
+            activeTab === "profile"
+              ? darkMode
+                ? "border-violet-500/40 bg-violet-900/30 text-violet-100"
+                : "border-violet-300 bg-violet-50 text-violet-800"
+              : darkMode
+              ? "border-slate-900 bg-slate-900/40 text-slate-300 hover:bg-slate-900/70"
+              : "border-gray-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
+          }`}
+          title={sidebarCollapsed ? "Profil" : undefined}
+        >
+          <User className="h-4 w-4" />
+          {!sidebarCollapsed && <span className="truncate">Profil</span>}
+        </button>
+
+        {/* Bouton déconnexion */}
+        <button
+          onClick={logout}
+          className={`w-full flex items-center ${sidebarCollapsed ? "justify-center" : "gap-2"} rounded-lg border px-2.5 py-1.5 text-xs font-medium transition ${
+            darkMode
+              ? "border-rose-600/40 bg-rose-900/30 text-rose-100 hover:bg-rose-900/50"
+              : "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+          }`}
+          title={sidebarCollapsed ? "Déconnexion" : undefined}
+        >
+          <LogOut className="h-4 w-4" />
+          {!sidebarCollapsed && <span className="truncate">Déconnexion</span>}
+        </button>
+
+        <div className={`space-y-1 rounded-xl border px-3 py-3 text-xs ${sidebarCollapsed ? "hidden" : ""}`}>
+          <p className={textWeak}>Events loaded: {eventsCount}</p>
+          <p className={textWeak}>Active tab: {activeTab}</p>
+        </div>
       </div>
     </aside>
   );

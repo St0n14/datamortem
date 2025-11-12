@@ -1,4 +1,4 @@
-# Makefile Guide - DataMortem
+# Makefile Guide - Requiem
 
 ## Quick Start
 
@@ -211,5 +211,5 @@ DEMO_CASE=test DEMO_EVENTS=10 bash scripts/demo_data.sh
 make check-opensearch
 
 # Vérifier qu'il y a bien des événements
-curl http://localhost:9200/datamortem-case-demo_case/_count
+curl http://localhost:9200/requiem-case-demo_case/_count
 ```

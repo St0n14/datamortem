@@ -1,8 +1,8 @@
-# dataMortem - Production Deployment Guide
+# Requiem - Production Deployment Guide
 
 ## Vue d'ensemble
 
-Ce guide explique comment déployer dataMortem en mode **production** avec :
+Ce guide explique comment déployer Requiem en mode **production** avec :
 - ✅ Frontend React buildé et servi par Nginx
 - ✅ Traefik comme reverse proxy unique (port 80)
 - ✅ Toutes les routes centralisées via Traefik
@@ -79,10 +79,10 @@ Si ce fichier n'existe pas, créez-le.
 
 ```bash
 # Builder l'image frontend en mode production
-docker build -f frontend/Dockerfile.prod -t datamortem-frontend:prod ./frontend
+docker build -f frontend/Dockerfile.prod -t requiem-frontend:prod ./frontend
 
 # Builder l'API
-docker build -t datamortem-api:prod ./services/api
+docker build -t requiem-api:prod ./services/api
 ```
 
 ---
@@ -266,9 +266,9 @@ traefik:
 ### Backup PostgreSQL
 
 ```bash
-# Backup base dataMortem
+# Backup base Requiem
 docker-compose -f docker-compose.prod.yml exec postgres \
-  pg_dump -U datamortem datamortem > backup_datamortem_$(date +%Y%m%d_%H%M%S).sql
+  pg_dump -U requiem requiem > backup_requiem_$(date +%Y%m%d_%H%M%S).sql
 
 # Backup base HedgeDoc
 docker-compose -f docker-compose.prod.yml exec hedgedoc-db \
@@ -280,13 +280,13 @@ docker-compose -f docker-compose.prod.yml exec hedgedoc-db \
 ```bash
 # Lake data (artefacts forensiques)
 docker run --rm \
-  -v datamortem_lake-data:/data \
+  -v requiem_lake-data:/data \
   -v $(pwd)/backups:/backup \
   alpine tar czf /backup/lake_$(date +%Y%m%d).tar.gz /data
 
 # OpenSearch data
 docker run --rm \
-  -v datamortem_opensearch-data:/data \
+  -v requiem_opensearch-data:/data \
   -v $(pwd)/backups:/backup \
   alpine tar czf /backup/opensearch_$(date +%Y%m%d).tar.gz /data
 ```
@@ -295,13 +295,13 @@ docker run --rm \
 
 ```bash
 # Restore PostgreSQL
-cat backup_datamortem_20250111.sql | \
+cat backup_requiem_20250111.sql | \
   docker-compose -f docker-compose.prod.yml exec -T postgres \
-  psql -U datamortem datamortem
+  psql -U requiem requiem
 
 # Restore volume
 docker run --rm \
-  -v datamortem_lake-data:/data \
+  -v requiem_lake-data:/data \
   -v $(pwd)/backups:/backup \
   alpine tar xzf /backup/lake_20250111.tar.gz -C /
 ```
@@ -314,7 +314,7 @@ docker run --rm \
 
 ```bash
 # Rebuild l'image
-docker build -t datamortem-api:latest ./services/api
+docker build -t requiem-api:latest ./services/api
 
 # Appliquer migrations DB
 docker-compose -f docker-compose.prod.yml exec api uv run alembic upgrade head
@@ -327,7 +327,7 @@ docker-compose -f docker-compose.prod.yml up -d --no-deps --build api
 
 ```bash
 # Rebuild l'image
-docker build -f frontend/Dockerfile.prod -t datamortem-frontend:latest ./frontend
+docker build -f frontend/Dockerfile.prod -t requiem-frontend:latest ./frontend
 
 # Redémarrer le frontend
 docker-compose -f docker-compose.prod.yml up -d --no-deps --build frontend
@@ -367,7 +367,7 @@ docker-compose -f docker-compose.prod.yml exec api curl http://localhost:8000/he
 
 ```bash
 # Vérifier labels des containers
-docker inspect datamortem-frontend | grep -A 20 Labels
+docker inspect requiem-frontend | grep -A 20 Labels
 
 # Dashboard Traefik
 open http://localhost:8080
@@ -398,7 +398,7 @@ prod-logs: ## Voir les logs production
 
 prod-backup: ## Backup bases de données
 	@mkdir -p backups
-	docker-compose -f docker-compose.prod.yml exec postgres pg_dump -U datamortem datamortem > backups/datamortem_$(shell date +%Y%m%d_%H%M%S).sql
+	docker-compose -f docker-compose.prod.yml exec postgres pg_dump -U requiem requiem > backups/requiem_$(shell date +%Y%m%d_%H%M%S).sql
 	@echo "Backup saved in backups/"
 
 prod-restart: ## Redémarrer un service (usage: make prod-restart SERVICE=api)
@@ -453,4 +453,4 @@ prod-scale: ## Scaler un service (usage: make prod-scale SERVICE=api N=3)
 
 **Version** : 1.0
 **Date** : 2025-11-11
-**Auteur** : dataMortem DevOps Team
+**Auteur** : Requiem DevOps Team

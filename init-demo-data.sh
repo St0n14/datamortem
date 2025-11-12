@@ -26,7 +26,7 @@ echo ""
 echo -e "${BLUE}[2/3]${NC} Création d'un case de démonstration..."
 CASE_RESPONSE=$(curl -s -X POST http://localhost:8080/api/cases \
   -H "Content-Type: application/json" \
-  -d '{"case_id": "demo_case_001", "note": "Case de démonstration dataMortem"}')
+  -d '{"case_id": "demo_case_001", "note": "Case de démonstration Requiem"}')
 
 if echo "$CASE_RESPONSE" | jq -e '.case_id' > /dev/null 2>&1; then
     echo -e "${GREEN}✅ Case créé:${NC} $(echo $CASE_RESPONSE | jq -r '.case_id')"

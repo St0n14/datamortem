@@ -1,3 +1,3 @@
 """
-Authentication module for dataMortem.
+Authentication module for Requiem.
 """

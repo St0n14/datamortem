@@ -3,7 +3,7 @@
 
 set -e
 
-echo "🧪 Exécution des tests dataMortem API..."
+echo "🧪 Exécution des tests Requiem API..."
 echo ""
 
 # Vérifier que pytest est installé

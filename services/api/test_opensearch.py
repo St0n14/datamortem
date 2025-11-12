@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Script de test pour le module OpenSearch de dataMortem.
+Script de test pour le module OpenSearch de Requiem.
 
 Usage:
     python test_opensearch.py
@@ -91,7 +91,7 @@ def test_3_create_sample_data():
 
     try:
         # Crée un répertoire temporaire
-        test_dir = Path("/tmp/datamortem_test")
+        test_dir = Path("/tmp/requiem_test")
         test_dir.mkdir(exist_ok=True)
 
         csv_path = test_dir / "test_events.csv"
@@ -316,7 +316,7 @@ def main():
     """Exécute tous les tests"""
     print("\n")
     print("🔬 " + "="*58)
-    print("🔬 TESTS MODULE OPENSEARCH - dataMortem")
+    print("🔬 TESTS MODULE OPENSEARCH - Requiem")
     print("🔬 " + "="*58)
 
     results = {}

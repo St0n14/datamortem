@@ -1,4 +1,4 @@
-# Guide Healthcheck Détaillé - dataMortem
+# Guide Healthcheck Détaillé - Requiem
 
 **Date** : 2025-01-11  
 **Statut** : ✅ Implémenté
@@ -22,7 +22,7 @@ Le système de healthcheck a été amélioré avec des endpoints détaillés qui
 ```json
 {
   "status": "healthy",
-  "service": "datamortem-api",
+  "service": "requiem-api",
   "message": "API is running"
 }
 ```

@@ -1,7 +1,7 @@
 services:
   traefik:
     image: traefik:v3.0
-    container_name: datamortem-traefik
+    container_name: requiem-traefik
     command:
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
@@ -13,32 +13,32 @@ services:
     depends_on:
       - api
     networks:
-      - datamortem
+      - requiem
 
   # PostgreSQL - Metadata database
   postgres:
     image: postgres:16-alpine
-    container_name: datamortem-postgres
+    container_name: requiem-postgres
     environment:
-      POSTGRES_DB: datamortem
-      POSTGRES_USER: datamortem
-      POSTGRES_PASSWORD: datamortem_dev_password
+      POSTGRES_DB: requiem
+      POSTGRES_USER: requiem
+      POSTGRES_PASSWORD: requiem_dev_password
     ports:
       - "5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U datamortem"]
+      test: ["CMD-SHELL", "pg_isready -U requiem"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
-      - datamortem
+      - requiem
 
   # Redis - Celery Broker
   redis:
     image: redis:7-alpine
-    container_name: datamortem-redis
+    container_name: requiem-redis
     ports:
       - "6379:6379"
     volumes:
@@ -49,12 +49,12 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - datamortem
+      - requiem
 
   # OpenSearch - Search and indexing
   opensearch:
     image: opensearchproject/opensearch:2.17.0
-    container_name: datamortem-opensearch
+    container_name: requiem-opensearch
     environment:
       - discovery.type=single-node
       - OPENSEARCH_INITIAL_ADMIN_PASSWORD=Admin123!
@@ -81,12 +81,12 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      - datamortem
+      - requiem
 
   # OpenSearch Dashboards - Visualization interface
   opensearch-dashboards:
     image: opensearchproject/opensearch-dashboards:2.17.0
-    container_name: datamortem-dashboards
+    container_name: requiem-dashboards
     environment:
       - OPENSEARCH_HOSTS=http://opensearch:9200
       - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
@@ -96,17 +96,17 @@ services:
       opensearch:
         condition: service_healthy
     networks:
-      - datamortem
+      - requiem
 
   # Backend API - FastAPI
   api:
     build:
       context: ./services/api
       dockerfile: Dockerfile
-    container_name: datamortem-api
+    container_name: requiem-api
     environment:
       - DM_ENV=dev
-      - DM_DB_URL=postgresql://datamortem:datamortem_dev_password@postgres:5432/datamortem
+      - DM_DB_URL=postgresql://requiem:requiem_dev_password@postgres:5432/requiem
       - DM_CELERY_BROKER=redis://redis:6379/0
       - DM_CELERY_BACKEND=redis://redis:6379/1
       - DM_OPENSEARCH_HOST=opensearch
@@ -132,7 +132,7 @@ services:
       hedgedoc:
         condition: service_started
     networks:
-      - datamortem
+      - requiem
     command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     labels:
       - "traefik.enable=true"
@@ -145,10 +145,10 @@ services:
     build:
       context: ./services/api
       dockerfile: Dockerfile
-    container_name: datamortem-celery
+    container_name: requiem-celery
     environment:
       - DM_ENV=dev
-      - DM_DB_URL=postgresql://datamortem:datamortem_dev_password@postgres:5432/datamortem
+      - DM_DB_URL=postgresql://requiem:requiem_dev_password@postgres:5432/requiem
       - DM_CELERY_BROKER=redis://redis:6379/0
       - DM_CELERY_BACKEND=redis://redis:6379/1
       - DM_OPENSEARCH_HOST=opensearch
@@ -167,7 +167,7 @@ services:
       opensearch:
         condition: service_healthy
     networks:
-      - datamortem
+      - requiem
     command: uv run celery -A app.celery_app worker --loglevel=info
 
   # Frontend - React/Vite
@@ -175,7 +175,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: datamortem-frontend
+    container_name: requiem-frontend
     ports:
       - "5174:5174"
     volumes:
@@ -186,11 +186,11 @@ services:
     depends_on:
       - api
     networks:
-      - datamortem
+      - requiem
 
   hedgedoc-db:
     image: postgres:16-alpine
-    container_name: datamortem-hedgedoc-db
+    container_name: requiem-hedgedoc-db
     environment:
       POSTGRES_DB: hedgedoc
       POSTGRES_USER: hedgedoc
@@ -205,11 +205,11 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - datamortem
+      - requiem
 
   hedgedoc:
     image: quay.io/hedgedoc/hedgedoc:1.10.0
-    container_name: datamortem-hedgedoc
+    container_name: requiem-hedgedoc
     environment:
       - CMD_DB_URL=postgres://hedgedoc:hedgedoc_password@hedgedoc-db:5432/hedgedoc
       # Allow direct /<slug> creation so per-case notes resolve immediately
@@ -230,7 +230,7 @@ services:
     volumes:
       - hedgedoc-uploads:/hedgedoc/public/uploads
     networks:
-      - datamortem
+      - requiem
 
 volumes:
   postgres-data:
@@ -241,5 +241,5 @@ volumes:
   hedgedoc-uploads:
 
 networks:
-  datamortem:
+  requiem:
     driver: bridge

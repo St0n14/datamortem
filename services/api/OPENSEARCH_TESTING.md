@@ -1,4 +1,4 @@
-# Guide de test OpenSearch - dataMortem
+# Guide de test OpenSearch - Requiem
 
 Ce guide explique comment tester le module OpenSearch nouvellement intégré.
 
@@ -7,14 +7,14 @@ Ce guide explique comment tester le module OpenSearch nouvellement intégré.
 ### 1. Installation des dépendances
 
 ```bash
-cd /home/braguette/dataMortem/services/api
+cd /home/braguette/Requiem/services/api
 uv sync
 ```
 
 ### 2. Démarrer OpenSearch
 
 ```bash
-cd /home/braguette/dataMortem
+cd /home/braguette/Requiem
 docker-compose -f docker-compose.opensearch.yml up -d
 ```
 
@@ -29,7 +29,7 @@ Vous devriez voir une réponse JSON avec les infos du cluster.
 ### 3. Démarrer l'API FastAPI
 
 ```bash
-cd /home/braguette/dataMortem/services/api
+cd /home/braguette/Requiem/services/api
 uv run uvicorn app.main:app --reload --port 8000
 ```
 
@@ -44,13 +44,13 @@ L'API sera accessible sur `http://localhost:8080`
 Ce script teste le module OpenSearch directement (sans passer par l'API):
 
 ```bash
-cd /home/braguette/dataMortem/services/api
+cd /home/braguette/Requiem/services/api
 python test_opensearch.py
 ```
 
 **Ce script va:**
 1. ✅ Tester la connexion OpenSearch
-2. ✅ Créer un index de test (`datamortem-case-test_case_001`)
+2. ✅ Créer un index de test (`requiem-case-test_case_001`)
 3. ✅ Générer 5 événements forensiques de test (CSV)
 4. ✅ Indexer les événements dans OpenSearch
 5. ✅ Effectuer des recherches
@@ -60,7 +60,7 @@ python test_opensearch.py
 **Sortie attendue:**
 ```
 🔬 ===========================================================
-🔬 TESTS MODULE OPENSEARCH - dataMortem
+🔬 TESTS MODULE OPENSEARCH - Requiem
 🔬 ===========================================================
 
 ============================================================
@@ -92,7 +92,7 @@ TEST 1: Connexion OpenSearch
 Ce script teste les endpoints REST de l'API:
 
 ```bash
-cd /home/braguette/dataMortem/services/api
+cd /home/braguette/Requiem/services/api
 chmod +x test_api_search.sh
 ./test_api_search.sh
 ```
@@ -257,7 +257,7 @@ for hit in response['hits']['hits']:
 
 ```bash
 # Vérifiez les logs
-docker logs datamortem-opensearch
+docker logs requiem-opensearch
 
 # Vérifiez que le port 9200 n'est pas déjà utilisé
 lsof -i :9200

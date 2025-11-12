@@ -1,8 +1,8 @@
-# Sandbox Multi-Langages - dataMortem
+# Sandbox Multi-Langages - Requiem
 
 ## Vue d'ensemble
 
-Le système de sandbox de dataMortem permet l'exécution **isolée et sécurisée** de scripts custom dans différents langages de programmation. Chaque script s'exécute dans un **conteneur Docker dédié** avec des limitations strictes de ressources et d'accès.
+Le système de sandbox de Requiem permet l'exécution **isolée et sécurisée** de scripts custom dans différents langages de programmation. Chaque script s'exécute dans un **conteneur Docker dédié** avec des limitations strictes de ressources et d'accès.
 
 ## Architecture
 
@@ -32,9 +32,9 @@ Le système de sandbox de dataMortem permet l'exécution **isolée et sécurisé
 │           Docker Container (Sandbox Execution)              │
 │                                                             │
 │  Language-specific image:                                  │
-│  • datamortem-sandbox-python:3.11                          │
-│  • datamortem-sandbox-rust:1.75                            │
-│  • datamortem-sandbox-go:1.21                              │
+│  • requiem-sandbox-python:3.11                          │
+│  • requiem-sandbox-rust:1.75                            │
+│  • requiem-sandbox-go:1.21                              │
 │                                                             │
 │  Security:                                                 │
 │  ✓ Non-root user (sandbox:1000)                           │
@@ -60,7 +60,7 @@ Le système de sandbox de dataMortem permet l'exécution **isolée et sécurisé
 
 **Versions** : 3.10, 3.11, 3.12
 
-**Image** : `datamortem-sandbox-python:{version}`
+**Image** : `requiem-sandbox-python:{version}`
 
 **Bibliothèques pré-installées** :
 - `pandas` 2.2.2 : Manipulation de données
@@ -93,7 +93,7 @@ print(f"Processed {len(df)} events for case {case_id}")
 
 **Version** : 1.75 (stable)
 
-**Image** : `datamortem-sandbox-rust:1.75`
+**Image** : `requiem-sandbox-rust:1.75`
 
 **Crates pré-cachées** :
 - `serde` : Sérialisation
@@ -133,7 +133,7 @@ fn main() {
 
 **Version** : 1.21+
 
-**Image** : `datamortem-sandbox-go:1.21`
+**Image** : `requiem-sandbox-go:1.21`
 
 **Modules pré-téléchargés** :
 - Outils Velocidex (forensique)
@@ -282,7 +282,7 @@ docker run \
   -v /workspace:ro \            # Source code (lecture seule)
   -v /output:rw \               # Résultats (écriture)
   -v /evidence:ro \             # Artefacts forensiques (lecture seule)
-  datamortem-sandbox-python:3.11 \
+  requiem-sandbox-python:3.11 \
   python script.py
 ```
 
@@ -515,7 +515,7 @@ func main() {
 
 ### Image Docker n'existe pas
 
-**Erreur** : `Error: No such image: datamortem-sandbox-python:3.11`
+**Erreur** : `Error: No such image: requiem-sandbox-python:3.11`
 
 **Solution** :
 ```bash
@@ -606,4 +606,4 @@ Toutes les exécutions sont enregistrées dans `TaskRun` :
 **Version** : 1.0
 **Date** : 2025-11-11
 **Statut** : ✅ Production-ready (Sandbox : 90%)
-**Auteur** : dataMortem Security Team
+**Auteur** : Requiem Security Team

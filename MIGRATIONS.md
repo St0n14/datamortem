@@ -1,8 +1,8 @@
-# Guide des Migrations Alembic - dataMortem
+# Guide des Migrations Alembic - Requiem
 
 ## Vue d'ensemble
 
-dataMortem utilise **Alembic** pour gérer les migrations de la base de données PostgreSQL. Alembic permet de :
+Requiem utilise **Alembic** pour gérer les migrations de la base de données PostgreSQL. Alembic permet de :
 
 - Versionner les changements de schéma de base de données
 - Appliquer des migrations de manière contrôlée
@@ -154,7 +154,7 @@ cat services/api/alembic/versions/<nouveau_fichier>.py
 vim services/api/alembic/versions/<nouveau_fichier>.py
 
 # 5. Copier vers le container (si modifié localement)
-docker cp services/api/alembic/versions/<nouveau_fichier>.py datamortem-api:/app/alembic/versions/
+docker cp services/api/alembic/versions/<nouveau_fichier>.py requiem-api:/app/alembic/versions/
 
 # 6. Appliquer la migration
 make db-migrate
@@ -173,7 +173,7 @@ make db-current
 make db-history
 
 # 3. Backup de la base (IMPORTANT !)
-docker-compose exec postgres pg_dump -U datamortem datamortem > backup_$(date +%Y%m%d_%H%M%S).sql
+docker-compose exec postgres pg_dump -U requiem requiem > backup_$(date +%Y%m%d_%H%M%S).sql
 
 # 4. Appliquer les migrations
 make db-migrate
@@ -224,7 +224,7 @@ docker-compose exec api uv run alembic heads
 docker-compose exec api uv run alembic merge -m "Merge feature branches" <head1> <head2>
 
 # Copier la migration
-docker cp datamortem-api:/app/alembic/versions/<merge_file>.py services/api/alembic/versions/
+docker cp requiem-api:/app/alembic/versions/<merge_file>.py services/api/alembic/versions/
 
 # Appliquer
 make db-migrate
@@ -327,7 +327,7 @@ docker-compose exec api uv run alembic merge -m "Merge heads" <head1> <head2>
 
 ```bash
 # 1. Backup d'abord !
-docker-compose exec postgres pg_dump -U datamortem datamortem > backup.sql
+docker-compose exec postgres pg_dump -U requiem requiem > backup.sql
 
 # 2. Vérifier la table alembic_version
 make db-shell
@@ -356,7 +356,7 @@ Pour automatiser les migrations dans un pipeline :
 
 - [Documentation Alembic](https://alembic.sqlalchemy.org/)
 - [SQLAlchemy 2.x Docs](https://docs.sqlalchemy.org/en/20/)
-- [Architecture dataMortem](./dataMortem_architecture_overview.md)
+- [Architecture Requiem](./Requiem_architecture_overview.md)
 - [Guide d'authentification](./AUTHENTICATION.md)
 
 ---

@@ -124,6 +124,13 @@ def get_pipeline(
     
     Optimisé pour éviter les requêtes N+1.
     """
+    # Check if pipeline is enabled
+    from .feature_flags import is_feature_enabled
+    if not is_feature_enabled("pipeline", db):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="La pipeline est actuellement désactivée."
+        )
 
     # Récupérer tous les modules
     modules = db.execute(select(AnalysisModule)).scalars().all()
@@ -226,6 +233,13 @@ def run_pipeline_module(
     Lance UN module sur une evidence.
     Le module DOIT exister en DB (analysis_modules) et être enabled.
     """
+    # Check if pipeline is enabled
+    from .feature_flags import is_feature_enabled
+    if not is_feature_enabled("pipeline", db):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="La pipeline est actuellement désactivée."
+        )
 
     ensure_has_write_permissions(current_user)
 

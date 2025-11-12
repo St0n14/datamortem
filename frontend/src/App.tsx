@@ -4,7 +4,6 @@ import { ToastProvider } from "./contexts/ToastContext";
 import { ToastContainer } from "./components/ui/ToastContainer";
 import { useSuperAdminAlerts } from "./hooks/useSuperAdminAlerts";
 import { LoginView } from "./views/LoginView";
-import { Header } from "./components/Header";
 import { PipelineView } from "./components/PipelineView";
 import { EvidencesView } from "./views/EvidencesView";
 import { ExplorerView } from "./views/ExplorerView";
@@ -12,6 +11,7 @@ import { ScriptsView } from "./views/ScriptsView";
 import { MarketplaceView } from "./views/MarketplaceView";
 import { RulesView } from "./views/RulesView";
 import { SuperAdminView } from "./views/SuperAdminView";
+import { ProfileView } from "./views/ProfileView";
 import { Sidebar } from "./components/layout/Sidebar";
 import { EventInspector } from "./components/layout/EventInspector";
 import { CaseIndexingSummary } from "./components/CaseIndexingSummary";
@@ -19,7 +19,7 @@ import { EmptyCaseView } from "./components/EmptyCaseView";
 import { TimelineSearchBar } from "./components/timeline/TimelineSearchBar";
 import { TimelineCard } from "./components/timeline/TimelineCard";
 import { EventsTable } from "./components/timeline/EventsTable";
-import { casesAPI, searchAPI, indexingAPI } from "./services/api";
+import { casesAPI, searchAPI, indexingAPI, featureFlagsAPI, type FeatureFlag } from "./services/api";
 import type { CaseIndexSummary } from "./types";
 import { EmailVerificationView } from "./views/EmailVerificationView";
 import { Card, CardContent } from "./components/ui/Card";
@@ -57,7 +57,7 @@ function AuthenticatedApp() {
   useSuperAdminAlerts();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeTab, setActiveTab] =
-    useState<"timeline" | "pipeline" | "rules" | "evidences" | "explorer" | "scripts" | "marketplace" | "admin">("timeline");
+    useState<"timeline" | "pipeline" | "rules" | "evidences" | "explorer" | "scripts" | "marketplace" | "admin" | "profile">("timeline");
 
   // Load current case from localStorage or use default
   const [currentCaseId, setCurrentCaseId] = useState<string>(() => {
@@ -78,6 +78,11 @@ function AuthenticatedApp() {
   const [caseSummary, setCaseSummary] = useState<CaseIndexSummary | null>(null);
   const [caseSummaryLoading, setCaseSummaryLoading] = useState(false);
   const [caseSummaryError, setCaseSummaryError] = useState<string | null>(null);
+  const [featureFlags, setFeatureFlags] = useState<Record<string, boolean>>({
+    account_creation: true,
+    marketplace: true,
+    pipeline: true,
+  });
   const userRole = user?.role;
   const isSuperAdmin = userRole === "superadmin";
 
@@ -118,6 +123,41 @@ function AuthenticatedApp() {
   useEffect(() => {
     loadCases();
   }, [casesRefreshToken]);
+
+  // Load feature flags on mount and refresh periodically
+  const refreshFeatureFlags = () => {
+    featureFlagsAPI
+      .list()
+      .then((flags) => {
+        const flagsMap: Record<string, boolean> = {};
+        flags.forEach((flag) => {
+          flagsMap[flag.feature_key] = flag.enabled;
+        });
+        setFeatureFlags(flagsMap);
+      })
+      .catch((err) => {
+        console.error('Failed to load feature flags:', err);
+        // Keep defaults on error
+      });
+  };
+
+  useEffect(() => {
+    refreshFeatureFlags();
+    // Refresh every 30 seconds to pick up changes
+    const interval = setInterval(refreshFeatureFlags, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Listen for feature flag updates from SuperAdminView
+  useEffect(() => {
+    const handleFeatureFlagUpdate = () => {
+      refreshFeatureFlags();
+    };
+    window.addEventListener('feature-flag-updated', handleFeatureFlagUpdate);
+    return () => {
+      window.removeEventListener('feature-flag-updated', handleFeatureFlagUpdate);
+    };
+  }, []);
 
   useEffect(() => {
     if (!currentCaseId) {
@@ -285,23 +325,25 @@ function AuthenticatedApp() {
         onTabChange={setActiveTab}
         userRole={user?.role}
         eventsCount={events.length}
+        featureFlags={featureFlags}
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <Header darkMode={darkMode} onToggleTheme={() => setDarkMode((prev) => !prev)} />
         <main className={`flex flex-1 min-w-0 flex-col gap-4 overflow-auto p-4 ${darkMode ? "bg-slate-950" : "bg-slate-100"}`}>
-          {(!cases.length || !currentCaseId) && activeTab !== "evidences" ? (
+          {(!cases.length || !currentCaseId) && activeTab !== "evidences" && activeTab !== "profile" ? (
             <EmptyCaseView darkMode={darkMode} onGoToEvidences={() => setActiveTab("evidences")} />
           ) : (
             <div className="flex flex-1 gap-4">
               <section className="flex flex-col flex-[2] min-h-0 min-w-0 gap-4">
-                <CaseIndexingSummary
-                  darkMode={darkMode}
-                  currentCaseId={currentCaseId}
-                  caseSummary={caseSummary}
-                  caseSummaryLoading={caseSummaryLoading}
-                  caseSummaryError={caseSummaryError}
-                />
+                {activeTab !== "profile" && (
+                  <CaseIndexingSummary
+                    darkMode={darkMode}
+                    currentCaseId={currentCaseId}
+                    caseSummary={caseSummary}
+                    caseSummaryLoading={caseSummaryLoading}
+                    caseSummaryError={caseSummaryError}
+                  />
+                )}
 
                 {activeTab === "timeline" && (
                   <>
@@ -346,7 +388,7 @@ function AuthenticatedApp() {
                 {activeTab === "pipeline" && (
                   <Card className={`flex-1 ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-slate-50"}`}>
                     <CardContent className="p-0">
-                      <PipelineView selectedEvidenceUid={selectedEvidenceUid} darkMode={darkMode} />
+                      <PipelineView selectedEvidenceUid={selectedEvidenceUid} darkMode={darkMode} isActive={activeTab === "pipeline"} />
                     </CardContent>
                   </Card>
                 )}
@@ -355,14 +397,17 @@ function AuthenticatedApp() {
                 {activeTab === "scripts" && <ScriptsView darkMode={darkMode} />}
                 {activeTab === "rules" && <RulesView darkMode={darkMode} />}
                 {activeTab === "admin" && isSuperAdmin && <SuperAdminView darkMode={darkMode} />}
+                {activeTab === "profile" && <ProfileView darkMode={darkMode} onToggleTheme={() => setDarkMode((prev) => !prev)} />}
               </section>
 
-              <EventInspector
-                darkMode={darkMode}
-                selectedEvent={selectedEvent}
-                onClose={() => setSelectedEventId(null)}
-                onAddTag={handleAddEventTag}
-              />
+              {activeTab !== "profile" && (
+                <EventInspector
+                  darkMode={darkMode}
+                  selectedEvent={selectedEvent}
+                  onClose={() => setSelectedEventId(null)}
+                  onAddTag={handleAddEventTag}
+                />
+              )}
             </div>
           )}
         </main>

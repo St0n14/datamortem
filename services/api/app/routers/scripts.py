@@ -81,6 +81,14 @@ def marketplace_scripts(
     current_user: User = Depends(get_current_user),
 ):
     """List all approved scripts available in the marketplace."""
+    # Check if marketplace is enabled
+    from .feature_flags import is_feature_enabled
+    if not is_feature_enabled("marketplace", db):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Le marketplace est actuellement désactivé."
+        )
+    
     scripts = (
         db.query(CustomScript)
         .filter(CustomScript.is_approved.is_(True))
@@ -96,6 +104,14 @@ def my_installed_scripts(
     current_user: User = Depends(get_current_user),
 ):
     """List all scripts installed by the current user."""
+    # Debug: vérifier les UserScript pour cet utilisateur
+    user_script_assignments = (
+        db.query(UserScript)
+        .filter(UserScript.user_id == current_user.id)
+        .all()
+    )
+    print(f"[DEBUG] User {current_user.id} ({current_user.email}) has {len(user_script_assignments)} script assignments")
+    
     user_scripts = (
         db.query(CustomScript)
         .join(UserScript, UserScript.script_id == CustomScript.id)
@@ -103,6 +119,7 @@ def my_installed_scripts(
         .order_by(CustomScript.name.asc())
         .all()
     )
+    print(f"[DEBUG] Returning {len(user_scripts)} scripts for user {current_user.id}")
     return user_scripts
 
 
@@ -287,8 +304,13 @@ def install_script(
     current_user: User = Depends(get_current_user),
 ):
     """Allow any user to install an approved script to their profile."""
+    print(f"[DEBUG] User {current_user.id} ({current_user.email}) attempting to install script {script_id}")
     script = _get_script(script_id, db)
-    if not script or not script.is_approved:
+    if not script:
+        print(f"[DEBUG] Script {script_id} not found")
+        raise HTTPException(status_code=404, detail="Script not available or not approved")
+    if not script.is_approved:
+        print(f"[DEBUG] Script {script_id} is not approved (is_approved={script.is_approved})")
         raise HTTPException(status_code=404, detail="Script not available or not approved")
 
     existing = (
@@ -297,11 +319,13 @@ def install_script(
         .first()
     )
     if existing:
+        print(f"[DEBUG] Script {script_id} already installed for user {current_user.id}")
         return {"status": "already_installed", "script_id": script_id}
 
     assignment = UserScript(user_id=current_user.id, script_id=script_id)
     db.add(assignment)
     db.commit()
+    print(f"[DEBUG] Successfully installed script {script_id} for user {current_user.id}")
 
     return {"status": "installed", "script_id": script_id}
 

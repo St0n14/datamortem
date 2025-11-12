@@ -1,5 +1,5 @@
 """
-Role definitions and helpers for the dataMortem RBAC system.
+Role definitions and helpers for the Requiem RBAC system.
 """
 from __future__ import annotations
 

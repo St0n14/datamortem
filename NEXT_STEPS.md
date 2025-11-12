@@ -67,7 +67,7 @@ def create_default_admin():
         
         # Create admin
         admin_user = User(
-            email="admin@datamortem.local",
+            email="admin@requiem.local",
             username="admin",
             hashed_password=get_password_hash("changeme123"),
             full_name="Default Administrator",
@@ -168,16 +168,16 @@ open http://localhost:8080/docs
 ./start-stack.sh
 
 # Voir les logs API
-docker logs -f datamortem-api
+docker logs -f requiem-api
 
 # Voir les logs Celery
-docker logs -f datamortem-celery
+docker logs -f requiem-celery
 
 # Entrer dans le container API
-docker exec -it datamortem-api sh
+docker exec -it requiem-api sh
 
 # Lancer Python shell
-docker exec -it datamortem-api uv run python
+docker exec -it requiem-api uv run python
 
 # Rebuild après changements
 docker-compose up -d --build api
@@ -186,7 +186,7 @@ docker-compose up -d --build api
 ### Base de données
 ```bash
 # Accéder à PostgreSQL
-docker exec -it datamortem-postgres psql -U datamortem -d datamortem
+docker exec -it requiem-postgres psql -U requiem -d requiem
 
 # Voir les tables
 \dt
@@ -195,10 +195,10 @@ docker exec -it datamortem-postgres psql -U datamortem -d datamortem
 SELECT id, username, email, role, is_active FROM users;
 
 # Backup manuel
-docker exec datamortem-postgres pg_dump -U datamortem datamortem > backup.sql
+docker exec requiem-postgres pg_dump -U requiem requiem > backup.sql
 
 # Restore
-docker exec -i datamortem-postgres psql -U datamortem datamortem < backup.sql
+docker exec -i requiem-postgres psql -U requiem requiem < backup.sql
 ```
 
 ### Alembic (après setup)

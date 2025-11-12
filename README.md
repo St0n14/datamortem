@@ -1,4 +1,4 @@
-# dataMortem
+# Requiem
 
 Plateforme d'analyse forensique (FastAPI + React + Celery + OpenSearch).
 

@@ -1,4 +1,4 @@
-# Configuration HTTPS/TLS - dataMortem
+# Configuration HTTPS/TLS - Requiem
 
 **Date** : 2025-01-11  
 **Statut** : ✅ Configuration HTTPS/TLS avec Let's Encrypt complétée
@@ -39,8 +39,8 @@ Dans `docker-compose.prod.yml`, remplacer **TOUS** les `yourdomain.com` par votr
 - "traefik.http.routers.frontend.rule=Host(`yourdomain.com`)"
 
 # Après
-- "--certificatesresolvers.letsencrypt.acme.email=admin@datamortem.example.com"
-- "traefik.http.routers.frontend.rule=Host(`datamortem.example.com`)"
+- "--certificatesresolvers.letsencrypt.acme.email=admin@requiem.example.com"
+- "traefik.http.routers.frontend.rule=Host(`requiem.example.com`)"
 ```
 
 ---

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import {
   AlertCircle,
   Check,
@@ -20,6 +20,7 @@ import { useAuth } from '../contexts/AuthContext';
 interface PipelineViewProps {
   selectedEvidenceUid: string | null;
   darkMode: boolean;
+  isActive?: boolean;
 }
 
 const badgeClass = (status: TaskRun['status'], darkMode: boolean) => {
@@ -55,7 +56,7 @@ const statusIcon = (status: TaskRun['status']) => {
   }
 };
 
-export function PipelineView({ selectedEvidenceUid, darkMode }: PipelineViewProps) {
+export function PipelineView({ selectedEvidenceUid, darkMode, isActive }: PipelineViewProps) {
   const [modules, setModules] = useState<AnalysisModule[]>([]);
   const [taskRuns, setTaskRuns] = useState<TaskRun[]>([]);
   const [scripts, setScripts] = useState<Script[]>([]);
@@ -79,6 +80,22 @@ export function PipelineView({ selectedEvidenceUid, darkMode }: PipelineViewProp
   const textStrong = darkMode ? 'text-slate-100' : 'text-gray-900';
   const borderColor = darkMode ? 'border-slate-700' : 'border-gray-200';
 
+  const loadScripts = useCallback(async () => {
+    setScriptsLoading(true);
+    setScriptError(null);
+    try {
+      const data = await scriptsAPI.myScripts();
+      console.log('[PipelineView] Loaded scripts:', data);
+      setScripts(data);
+    } catch (error) {
+      console.error('[PipelineView] Failed to load user scripts:', error);
+      // Silently fail if no scripts installed - this is normal for new users
+      setScripts([]);
+    } finally {
+      setScriptsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!selectedEvidenceUid) {
       setModules([]);
@@ -93,7 +110,28 @@ export function PipelineView({ selectedEvidenceUid, darkMode }: PipelineViewProp
 
   useEffect(() => {
     loadScripts();
-  }, []);
+  }, [loadScripts]);
+
+  // Recharger les scripts quand l'onglet Pipeline devient actif
+  // Cela permet d'afficher les scripts installés depuis le marketplace
+  useEffect(() => {
+    if (isActive) {
+      loadScripts();
+    }
+  }, [isActive, loadScripts]);
+
+  // Écouter les événements d'installation de script depuis le marketplace
+  useEffect(() => {
+    const handleScriptInstalled = () => {
+      // Recharger les scripts quand un script est installé depuis le marketplace
+      loadScripts();
+    };
+
+    window.addEventListener('script-installed', handleScriptInstalled);
+    return () => {
+      window.removeEventListener('script-installed', handleScriptInstalled);
+    };
+  }, [loadScripts]);
 
   useEffect(() => {
     if (!selectedEvidenceUid || runningTasks.size === 0) {
@@ -143,21 +181,6 @@ export function PipelineView({ selectedEvidenceUid, darkMode }: PipelineViewProp
         setTaskRuns([]);
         setRunningTasks(new Set());
       }
-    }
-  };
-
-  const loadScripts = async () => {
-    setScriptsLoading(true);
-    setScriptError(null);
-    try {
-      const data = await scriptsAPI.myScripts();
-      setScripts(data);
-    } catch (error) {
-      console.error('Failed to load user scripts:', error);
-      // Silently fail if no scripts installed - this is normal for new users
-      setScripts([]);
-    } finally {
-      setScriptsLoading(false);
     }
   };
 

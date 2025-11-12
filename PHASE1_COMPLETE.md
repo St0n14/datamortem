@@ -2,7 +2,7 @@
 
 ## Summary
 
-J'ai implémenté un système d'authentification complet basé sur JWT pour sécuriser dataMortem. Voici ce qui a été fait :
+J'ai implémenté un système d'authentification complet basé sur JWT pour sécuriser Requiem. Voici ce qui a été fait :
 
 ## 🎉 Ce qui a été implémenté
 

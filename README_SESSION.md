@@ -1,4 +1,4 @@
-# Session de Travail - DataMortem
+# Session de Travail - Requiem
 
 ## Résumé des Modifications
 
@@ -174,7 +174,7 @@ DEMO_CASE=my_case DEMO_EVENTS=5000 make demo-data
     ↓
 PostgreSQL (table Event) ✅
     +
-OpenSearch (index datamortem-case-*) ✅
+OpenSearch (index requiem-case-*) ✅
     ↓
 Timeline / Explorer ✅
 ```
@@ -196,7 +196,7 @@ OpenSearch: ✅ 100 événements
 ```json
 {
   "status": "healthy",
-  "service": "datamortem-api",
+  "service": "requiem-api",
   "message": "API is running"
 }
 ```
@@ -255,7 +255,7 @@ DEMO_CASE=my_case DEMO_EVENTS=1000 make demo-data
 ## Structure des Fichiers Modifiés/Créés
 
 ```
-datamortem/
+requiem/
 ├── Makefile                          # ✨ NOUVEAU
 ├── MAKEFILE.md                       # ✨ NOUVEAU - Documentation
 ├── README_SESSION.md                 # ✨ NOUVEAU - Ce fichier
@@ -331,10 +331,10 @@ OpenSearch rejette les noms d'index avec majuscules. La conversion automatique �
 curl http://localhost:9200/_cat/indices?v
 
 # Compter les événements d'un case
-curl http://localhost:9200/datamortem-case-CASE_ID/_count
+curl http://localhost:9200/requiem-case-CASE_ID/_count
 
 # Voir un événement
-curl http://localhost:9200/datamortem-case-CASE_ID/_search?size=1
+curl http://localhost:9200/requiem-case-CASE_ID/_search?size=1
 
 # Réindexer tous les events d'un case
 curl -X POST http://localhost:8080/api/indexing/cases/CASE_ID/reindex \

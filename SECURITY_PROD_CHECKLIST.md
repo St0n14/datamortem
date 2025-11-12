@@ -1,10 +1,10 @@
-# Checklist Sécurité & Production - dataMortem
+# Checklist Sécurité & Production - Requiem
 
 **Version** : 1.0  
 **Date** : 2025-01-11  
 **État actuel** : ~60-65% production-ready
 
-Ce document liste toutes les étapes nécessaires pour rendre dataMortem **sécurisé et prêt pour la production**.
+Ce document liste toutes les étapes nécessaires pour rendre Requiem **sécurisé et prêt pour la production**.
 
 ---
 
@@ -33,7 +33,7 @@ Ce document liste toutes les étapes nécessaires pour rendre dataMortem **sécu
 ```bash
 # Template pour production
 DM_ENV=production
-DM_DB_URL=postgresql://datamortem:CHANGE_ME@postgres:5432/datamortem
+DM_DB_URL=postgresql://requiem:CHANGE_ME@postgres:5432/requiem
 DM_CELERY_BROKER=redis://redis:6379/0
 DM_CELERY_BACKEND=redis://redis:6379/1
 
@@ -67,7 +67,7 @@ DM_EMAIL_VERIFICATION_BASE_URL=https://yourdomain.com/verify-email
 
 # OTP/2FA
 DM_ENABLE_OTP=true
-DM_OTP_ISSUER=dataMortem
+DM_OTP_ISSUER=Requiem
 ```
 
 #### ✅ Générer les secrets

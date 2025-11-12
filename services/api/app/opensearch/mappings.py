@@ -1,5 +1,5 @@
 """
-OpenSearch index mappings for dataMortem.
+OpenSearch index mappings for Requiem.
 
 Provides ECS-inspired mapping with forensic-specific fields and dynamic templates.
 """
@@ -10,7 +10,7 @@ def get_base_mapping(
     replica_count: int = 0
 ) -> dict:
     """
-    Retourne le mapping hybride pour un index dataMortem.
+    Retourne le mapping hybride pour un index Requiem.
 
     Stratégie:
     - Champs communs ECS-inspired: mapping strict

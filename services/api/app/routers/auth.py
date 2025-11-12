@@ -35,6 +35,11 @@ from ..auth.security import (
     create_access_token,
     ACCESS_TOKEN_EXPIRE_MINUTES,
 )
+from ..auth.password_validator import (
+    validate_password,
+    PasswordValidationError,
+    get_password_requirements_text,
+)
 from ..auth.dependencies import (
     get_current_active_user,
     get_current_superadmin_user,
@@ -97,9 +102,34 @@ def register(
 
     - **email**: Valid email address (unique)
     - **username**: Username (3-50 characters, unique)
-    - **password**: Password (minimum 8 characters)
+    - **password**: Password (must meet security requirements)
     - **full_name**: Optional full name
+
+    Password requirements:
+    - Minimum 12 characters
+    - At least one uppercase letter
+    - At least one lowercase letter
+    - At least one digit
+    - At least one special character
+    - Must not be a common/weak password
     """
+    # Check if account creation is enabled
+    from .feature_flags import is_feature_enabled
+    if not is_feature_enabled("account_creation", db):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="La création de compte est actuellement désactivée. Veuillez contacter un administrateur."
+        )
+    
+    # Validate password strength
+    try:
+        validate_password(user_data.password)
+    except PasswordValidationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
     # Check if username already exists
     existing_user = db.query(User).filter(User.username == user_data.username).first()
     if existing_user:
@@ -168,7 +198,18 @@ def admin_create_user(
 ):
     """
     Superadmin endpoint to create a new user with an explicit role.
+    
+    Password must meet security requirements (see /register endpoint).
     """
+    # Validate password strength
+    try:
+        validate_password(user_data.password)
+    except PasswordValidationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
     existing_user = db.query(User).filter(User.username == user_data.username).first()
     if existing_user:
         raise HTTPException(
@@ -373,7 +414,15 @@ def change_password(
     Change current user's password.
 
     - **current_password**: Current password
-    - **new_password**: New password (minimum 8 characters)
+    - **new_password**: New password (must meet security requirements)
+
+    Password requirements:
+    - Minimum 12 characters
+    - At least one uppercase letter
+    - At least one lowercase letter
+    - At least one digit
+    - At least one special character
+    - Must not be a common/weak password
     """
     # Reload user from the current session to ensure it's attached to this session
     user = db.query(User).filter(User.id == current_user.id).first()
@@ -390,12 +439,45 @@ def change_password(
             detail="Current password is incorrect"
         )
 
+    # Validate new password strength
+    try:
+        validate_password(password_data.new_password)
+    except PasswordValidationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+    # Check if new password is the same as current password
+    if verify_password(password_data.new_password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be different from the current password"
+        )
+
     # Update password
     user.hashed_password = get_password_hash(password_data.new_password)
     db.commit()
     db.refresh(user)
 
     return {"message": "Password updated successfully"}
+
+
+@router.get("/password-requirements")
+def get_password_requirements_endpoint():
+    """
+    Get password security requirements.
+    
+    Returns the current password policy requirements that must be met
+    when creating or changing a password.
+    """
+    from ..auth.password_validator import get_password_requirements, get_password_requirements_text
+    
+    requirements = get_password_requirements()
+    return {
+        "requirements": requirements,
+        "description": get_password_requirements_text(),
+    }
 
 
 @router.get("/users", response_model=list[UserPublic])
@@ -512,7 +594,7 @@ def otp_setup(
     current_user.otp_enabled = False
     db.commit()
 
-    issuer = settings.dm_otp_issuer or "dataMortem"
+    issuer = settings.dm_otp_issuer or "Requiem"
     identity = current_user.email or current_user.username
     totp = pyotp.TOTP(secret)
     provisioning_uri = totp.provisioning_uri(name=identity, issuer_name=issuer)

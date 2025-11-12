@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# Script de démarrage de la stack complète dataMortem
+# Script de démarrage de la stack complète Requiem
 # Usage: ./start-stack.sh
 
 set -e
 
 echo "=================================================="
-echo "🚀 DÉMARRAGE STACK dataMortem"
+echo "🚀 DÉMARRAGE STACK Requiem"
 echo "=================================================="
 echo ""
 
@@ -40,13 +40,13 @@ echo ""
 # 2. Attendre que les services soient prêts
 echo -e "${BLUE}[2/3]${NC} Attente des services..."
 echo -n "   PostgreSQL..."
-until docker exec datamortem-postgres pg_isready -U datamortem > /dev/null 2>&1; do
+until docker exec requiem-postgres pg_isready -U requiem > /dev/null 2>&1; do
     sleep 1
 done
 echo -e " ${GREEN}OK${NC}"
 
 echo -n "   Redis..."
-until docker exec datamortem-redis redis-cli ping > /dev/null 2>&1; do
+until docker exec requiem-redis redis-cli ping > /dev/null 2>&1; do
     sleep 1
 done
 echo -e " ${GREEN}OK${NC}"
@@ -79,7 +79,7 @@ echo ""
 
 # 3. Initialiser la base de données (run migrations and create admin)
 echo -e "${BLUE}[3/3]${NC} Initialisation de la base de données..."
-docker exec datamortem-api sh init-db.sh
+docker exec requiem-api sh init-db.sh
 echo -e "${GREEN}✅ Base de données initialisée${NC}"
 echo ""
 
@@ -98,11 +98,11 @@ echo "  🗄️  PostgreSQL:          localhost:5432"
 echo "  📮 Redis:               localhost:6379"
 echo ""
 echo "Logs Docker:"
-echo "  📝 API:        docker logs -f datamortem-api"
-echo "  📝 Celery:     docker logs -f datamortem-celery"
-echo "  📝 Traefik:    docker logs -f datamortem-traefik"
-echo "  📝 Frontend:   docker logs -f datamortem-frontend"
-echo "  📝 OpenSearch: docker logs -f datamortem-opensearch"
+echo "  📝 API:        docker logs -f requiem-api"
+echo "  📝 Celery:     docker logs -f requiem-celery"
+echo "  📝 Traefik:    docker logs -f requiem-traefik"
+echo "  📝 Frontend:   docker logs -f requiem-frontend"
+echo "  📝 OpenSearch: docker logs -f requiem-opensearch"
 echo ""
 echo "Commandes utiles:"
 echo "  Voir tous les logs:           docker-compose logs -f"

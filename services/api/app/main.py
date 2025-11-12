@@ -4,7 +4,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from slowapi.errors import RateLimitExceeded
 from .config import settings
 from .db import Base, engine
-from .routers import pipeline, events, case, evidence, artifacts, search, indexing, auth, scripts, health, admin, rules
+from .routers import pipeline, events, case, evidence, artifacts, search, indexing, auth, scripts, health, admin, rules, feature_flags
 from .opensearch.client import close_opensearch_client
 from .middleware.rate_limit import limiter, create_rate_limit_exceeded_handler
 from .middleware.security_headers import SecurityHeadersMiddleware
@@ -12,8 +12,60 @@ from .middleware.security_headers import SecurityHeadersMiddleware
 # Assure que les tables existent (SQLite dev mode)
 Base.metadata.create_all(bind=engine)
 
+# Initialize feature flags if they don't exist
+def init_feature_flags():
+    """Initialize default feature flags if they don't exist."""
+    from .db import SessionLocal
+    from .models import FeatureFlag
+    from datetime import datetime
+    
+    db = SessionLocal()
+    try:
+        # Check if any feature flags exist
+        existing_count = db.query(FeatureFlag).count()
+        
+        if existing_count == 0:
+            # Default feature flags
+            default_flags = [
+                {
+                    "feature_key": "account_creation",
+                    "enabled": True,
+                    "description": "Permet la création de nouveaux comptes utilisateurs",
+                },
+                {
+                    "feature_key": "marketplace",
+                    "enabled": True,
+                    "description": "Permet l'accès au marketplace de scripts",
+                },
+                {
+                    "feature_key": "pipeline",
+                    "enabled": True,
+                    "description": "Permet l'utilisation de la pipeline d'analyse",
+                },
+            ]
+            
+            for flag_data in default_flags:
+                flag = FeatureFlag(
+                    feature_key=flag_data["feature_key"],
+                    enabled=flag_data["enabled"],
+                    description=flag_data["description"],
+                    updated_at_utc=datetime.utcnow(),
+                )
+                db.add(flag)
+            
+            db.commit()
+            print("✓ Feature flags initialized")
+    except Exception as e:
+        print(f"⚠️  Warning: Could not initialize feature flags: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+# Initialize feature flags on startup
+init_feature_flags()
+
 app = FastAPI(
-    title="dataMortem API",
+    title="Requiem API",
     version="0.1.0",
     description="Digital Forensics Investigation Platform"
 )
@@ -48,6 +100,7 @@ app.include_router(scripts.router)                    # Custom scripts managemen
 app.include_router(health.router, prefix="/api")      # System health status
 app.include_router(admin.router, prefix="/api")       # Admin stats
 app.include_router(rules.router, prefix="/api")       # Rules management
+app.include_router(feature_flags.router)              # Feature flags management
 
 @app.get("/health")
 def health():

@@ -1,6 +1,6 @@
 # Authentication Guide
 
-dataMortem now includes a complete JWT-based authentication system to secure your digital forensics platform.
+Requiem now includes a complete JWT-based authentication system to secure your digital forensics platform.
 
 ## Quick Start
 
@@ -94,7 +94,7 @@ curl -X GET http://localhost:8080/api/auth/me \
 
 ## User Roles
 
-dataMortem supports role-based access control (RBAC) with four granular roles:
+Requiem supports role-based access control (RBAC) with four granular roles:
 
 - **superadmin**: Full platform management (user lifecycle, custom scripts, stack/infra health, revocations)
 - **admin**: Advanced analysts with full data visibility and debug capabilities, but no system management
@@ -169,7 +169,7 @@ curl -X POST http://localhost:8080/api/auth/resend-verification \
 
 ## OTP / MFA (TOTP)
 
-Set `DM_ENABLE_OTP=true` (optional `DM_OTP_ISSUER=dataMortem`) to let users protect their session with a standard TOTP application (Google Authenticator, 1Password, Microsoft Authenticator, etc.). The provided `docker-compose.yml` already exports `DM_ENABLE_OTP=true`, so the feature is available out-of-the-box in local dev environments.
+Set `DM_ENABLE_OTP=true` (optional `DM_OTP_ISSUER=Requiem`) to let users protect their session with a standard TOTP application (Google Authenticator, 1Password, Microsoft Authenticator, etc.). The provided `docker-compose.yml` already exports `DM_ENABLE_OTP=true`, so the feature is available out-of-the-box in local dev environments.
 
 Workflow:
 
@@ -213,7 +213,7 @@ db.commit()
 ### "User not found"
 
 - Ensure user exists in database
-- Check PostgreSQL is healthy: `docker logs datamortem-postgres`
+- Check PostgreSQL is healthy: `docker logs requiem-postgres`
 
 ### "Not enough permissions"
 

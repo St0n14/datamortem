@@ -1,5 +1,5 @@
 """
-OpenSearch index management for dataMortem.
+OpenSearch index management for Requiem.
 
 Handles creation, deletion, and lifecycle of case-specific indices.
 """
@@ -15,7 +15,7 @@ def get_index_name(case_id: str) -> str:
     """
     Retourne le nom d'index pour un case.
 
-    Pattern: datamortem-case-{case_id}
+    Pattern: requiem-case-{case_id}
 
     Note: OpenSearch requires lowercase index names, so case_id is converted to lowercase.
 
@@ -25,7 +25,7 @@ def get_index_name(case_id: str) -> str:
     Returns:
         Index name string (lowercase)
     """
-    return f"datamortem-case-{case_id.lower()}"
+    return f"requiem-case-{case_id.lower()}"
 
 
 def create_index_if_not_exists(

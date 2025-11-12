@@ -1,5 +1,5 @@
 """
-OpenSearch indexer for dataMortem.
+OpenSearch indexer for Requiem.
 
 Handles bulk indexing of parser results from Parquet/CSV files.
 """

@@ -401,3 +401,22 @@ class Event(Base):
         back_populates="events",
         primaryjoin="Event.case_id == Case.case_id",
     )
+
+
+# -----------------
+# FeatureFlag (gestion des fonctionnalités)
+# -----------------
+class FeatureFlag(Base):
+    __tablename__ = "feature_flags"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    feature_key: Mapped[str] = mapped_column(String, unique=True, index=True)  # ex: "account_creation", "marketplace", "pipeline"
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_at_utc: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_by_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("users.id"),
+        nullable=True,
+        index=True,
+    )

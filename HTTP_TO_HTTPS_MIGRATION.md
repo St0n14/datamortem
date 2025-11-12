@@ -1,4 +1,4 @@
-# Guide Migration HTTP → HTTPS - dataMortem
+# Guide Migration HTTP → HTTPS - Requiem
 
 **Date** : 2025-01-11  
 **Objectif** : Passer de HTTP (local) à HTTPS (production) avec Let's Encrypt
@@ -44,8 +44,8 @@ nslookup votre-domaine.com
 **Configuration DNS recommandée** :
 ```
 Type    Name                    Value           TTL
-A       datamortem.example.com  123.45.67.89    3600
-A       www.datamortem.example.com  123.45.67.89    3600
+A       requiem.example.com  123.45.67.89    3600
+A       www.requiem.example.com  123.45.67.89    3600
 ```
 
 #### 1.2 Vérifier le firewall

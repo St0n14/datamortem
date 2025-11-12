@@ -1,4 +1,4 @@
-# Améliorations Frontend - dataMortem
+# Améliorations Frontend - Requiem
 
 **Date** : 2025-01-11  
 **État actuel** : Interface fonctionnelle avec Tailwind CSS, React, dark mode

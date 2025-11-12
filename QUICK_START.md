@@ -1,4 +1,4 @@
-# 🚀 Démarrage Rapide - dataMortem Stack Complète
+# 🚀 Démarrage Rapide - Requiem Stack Complète
 
 ## ⚡ TL;DR - 3 commandes
 

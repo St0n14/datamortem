@@ -5,7 +5,7 @@ import { BrandMark } from "../components/BrandMark";
 describe("BrandMark", () => {
   test("renders title and default subtitle in dark mode", () => {
     render(<BrandMark />);
-    expect(screen.getByText("dataMortem")).toBeInTheDocument();
+    expect(screen.getByText("Requiem")).toBeInTheDocument();
     expect(screen.getByText("Digital Forensics Platform")).toBeInTheDocument();
   });
 

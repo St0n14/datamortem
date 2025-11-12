@@ -4,7 +4,7 @@
 
 ## Résumé
 
-Mise en place complète du système de migrations Alembic pour dataMortem, permettant une gestion versionnée et contrôlée du schéma de base de données PostgreSQL.
+Mise en place complète du système de migrations Alembic pour Requiem, permettant une gestion versionnée et contrôlée du schéma de base de données PostgreSQL.
 
 ## Ce qui a été fait
 
@@ -98,7 +98,7 @@ make db-current
   - Dépannage
   - Bonnes pratiques
 
-- **Architecture mise à jour** : `dataMortem_architecture_overview.md`
+- **Architecture mise à jour** : `Requiem_architecture_overview.md`
   - Ajout section Alembic dans infrastructure
   - Production readiness : 40-45% → 45-50%
   - Database Management : 80%
@@ -141,7 +141,7 @@ services/api/alembic/versions/8f6e0f2be8d2_*.py                     # Ajout chec
 services/api/alembic/versions/7b4f50a1e0e0_*.py                     # Ajout checks idempotents
 services/api/alembic/versions/2a6d94c6cc2b_*.py                     # Ajout checks idempotents
 Makefile                                                             # 6 nouvelles commandes db-*
-dataMortem_architecture_overview.md                                 # Mise à jour production readiness
+Requiem_architecture_overview.md                                 # Mise à jour production readiness
 ```
 
 ### Créés
@@ -156,7 +156,7 @@ ALEMBIC_SETUP.md                                                    # Ce fichier
 
 ### Test 1 : Migration depuis zéro ✅
 ```bash
-docker exec datamortem-api uv run alembic upgrade head
+docker exec requiem-api uv run alembic upgrade head
 # Résultat : Toutes les migrations appliquées sans erreur
 ```
 
@@ -171,7 +171,7 @@ make db-history
 
 ### Test 3 : Autogénération ✅
 ```bash
-docker exec datamortem-api uv run alembic revision --autogenerate -m "Sync with current models state"
+docker exec requiem-api uv run alembic revision --autogenerate -m "Sync with current models state"
 # Résultat : Migration vide (pass) = synchronisation parfaite
 ```
 
@@ -191,7 +191,7 @@ Créer un script `scripts/safe_migrate.sh` :
 ```bash
 #!/bin/bash
 # Backup avant migration
-docker-compose exec postgres pg_dump -U datamortem datamortem > backup_$(date +%Y%m%d_%H%M%S).sql
+docker-compose exec postgres pg_dump -U requiem requiem > backup_$(date +%Y%m%d_%H%M%S).sql
 # Migration
 make db-migrate
 ```
@@ -210,7 +210,7 @@ Ajouter dans le README principal :
 ```markdown
 ## Database Migrations
 
-dataMortem uses Alembic for database schema management.
+Requiem uses Alembic for database schema management.
 
 **Quick commands:**
 - `make db-migrate` - Apply pending migrations
