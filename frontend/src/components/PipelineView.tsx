@@ -1,12 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  AlertCircle,
   Check,
   Clock,
   Database,
   FileCode2,
   Loader,
-  Play,
   Terminal,
   X,
 } from 'lucide-react';
@@ -14,7 +12,7 @@ import {
 import { Button } from './ui/Button';
 import { Badge } from './ui/Badge';
 import { indexingAPI, pipelineAPI, scriptsAPI, evidenceAPI, artifactsAPI } from '../services/api';
-import type { AnalysisModule, TaskRun, Script, Evidence } from '../types';
+import type { TaskRun, Script, Evidence } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 
 interface PipelineViewProps {
@@ -58,13 +56,11 @@ const statusIcon = (status: TaskRun['status']) => {
 };
 
 export function PipelineView({ selectedEvidenceUid, setSelectedEvidenceUid, darkMode, isActive }: PipelineViewProps) {
-  const [modules, setModules] = useState<AnalysisModule[]>([]);
   const [taskRuns, setTaskRuns] = useState<TaskRun[]>([]);
   const [scripts, setScripts] = useState<Script[]>([]);
   const [evidences, setEvidences] = useState<Evidence[]>([]);
   const [evidencesLoading, setEvidencesLoading] = useState(false);
 
-  const [modulesLoading, setModulesLoading] = useState(true);
   const [scriptsLoading, setScriptsLoading] = useState(false);
 
   const [runningTasks, setRunningTasks] = useState<Set<number>>(new Set());
@@ -83,17 +79,14 @@ export function PipelineView({ selectedEvidenceUid, setSelectedEvidenceUid, dark
 
   const textWeak = darkMode ? 'text-slate-500' : 'text-gray-500';
   const textStrong = darkMode ? 'text-slate-100' : 'text-gray-900';
-  const borderColor = darkMode ? 'border-slate-700' : 'border-gray-200';
 
   useEffect(() => {
     if (!selectedEvidenceUid) {
-      setModules([]);
       setTaskRuns([]);
       setRunningTasks(new Set());
       return;
     }
 
-    loadModules(selectedEvidenceUid);
     loadTaskRuns(selectedEvidenceUid);
   }, [selectedEvidenceUid]);
 
@@ -126,24 +119,6 @@ export function PipelineView({ selectedEvidenceUid, setSelectedEvidenceUid, dark
     const interval = setInterval(() => loadTaskRuns(selectedEvidenceUid), 3000);
     return () => clearInterval(interval);
   }, [selectedEvidenceUid, runningTasks.size]);
-
-  const loadModules = async (evidenceUid: string) => {
-    setModulesLoading(true);
-    try {
-      const data = await pipelineAPI.listModules(evidenceUid);
-      setModules(data);
-    } catch (error: any) {
-      // 404 is expected when evidence doesn't exist - don't log as error
-      if (error.message && (error.message.includes('404') || error.message.includes('Not Found') || error.message.includes('Evidence not found'))) {
-        setModules([]);
-      } else {
-        console.error('Failed to load modules:', error);
-        setModules([]);
-      }
-    } finally {
-      setModulesLoading(false);
-    }
-  };
 
   const loadTaskRuns = async (evidenceUid: string) => {
     try {
@@ -182,27 +157,6 @@ export function PipelineView({ selectedEvidenceUid, setSelectedEvidenceUid, dark
       setScripts([]);
     } finally {
       setScriptsLoading(false);
-    }
-  };
-
-  const handleRunModule = async (moduleId: number) => {
-    if (!selectedEvidenceUid) {
-      return;
-    }
-
-    if (!hasPipelineWriteAccess) {
-      return;
-    }
-
-    try {
-      const response = await pipelineAPI.run({
-        module_id: moduleId,
-        evidence_uid: selectedEvidenceUid,
-      });
-      setRunningTasks((prev) => new Set(prev).add(response.task_run_id));
-      loadTaskRuns(selectedEvidenceUid);
-    } catch (error) {
-      console.error('Failed to run module:', error);
     }
   };
 
@@ -291,125 +245,13 @@ export function PipelineView({ selectedEvidenceUid, setSelectedEvidenceUid, dark
     }
   };
 
-  const getTaskRunsForModule = (moduleId: number) =>
-    taskRuns.filter((run) => run.module_id === moduleId);
-
   const scriptTaskRuns = useMemo(
     () => taskRuns.filter((run) => run.script_id),
     [taskRuns],
   );
 
-  // Ne plus bloquer l'affichage si aucune evidence n'est sélectionnée
-  // On affichera le sélecteur en haut
-
-  if (modulesLoading) {
-    return (
-      <div className="p-8 text-center">
-        <div className={`text-sm ${textWeak}`}>Loading pipeline…</div>
-      </div>
-    );
-  }
-
   return (
     <div className={`p-6 space-y-6 text-[12px] ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>
-
-      {/* Modules */}
-      {selectedEvidenceUid && modules.length > 0 ? (
-        <div>
-          <div className={`text-[10px] font-medium uppercase tracking-wide mb-4 ${textWeak}`}>
-            Analysis Modules ({modules.length})
-          </div>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            {modules.map((module) => {
-              const moduleRuns = getTaskRunsForModule(module.id);
-              const lastRun = moduleRuns[0];
-
-              return (
-                <div
-                  key={module.id}
-                  className={`rounded-lg border p-4 ${
-                    darkMode ? 'border-slate-700 bg-slate-900' : 'border-gray-200 bg-slate-50'
-                  }`}
-                >
-                  <div className="mb-3 flex items-start justify-between gap-2">
-                    <div>
-                      <div className={`font-semibold ${textStrong}`}>{module.name}</div>
-                      {module.description && (
-                        <div className={`mt-1 text-[11px] ${textWeak}`}>{module.description}</div>
-                      )}
-                    </div>
-                  </div>
-
-                    <div className="flex flex-wrap items-center gap-2">
-                    {(() => {
-                      const moduleDisabled = !module.enabled || !hasPipelineWriteAccess;
-                      const moduleTitle = !hasPipelineWriteAccess
-                        ? 'Profil en lecture seule : exécution désactivée.'
-                        : !module.enabled
-                        ? 'Module désactivé.'
-                        : undefined;
-                      return (
-                        <Button
-                          onClick={() => handleRunModule(module.id)}
-                          disabled={moduleDisabled}
-                          title={moduleTitle}
-                          className={`h-7 px-3 text-[11px] ${
-                            darkMode
-                              ? 'border-violet-600/30 bg-violet-950/40 text-violet-200 hover:bg-violet-900/30'
-                              : 'border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100'
-                          } ${moduleDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-                        >
-                          <Play className="mr-1 h-3 w-3" />
-                          Run
-                        </Button>
-                      );
-                    })()}
-
-                    {lastRun && (
-                      <Badge
-                        className={`inline-flex items-center gap-1 rounded-md border text-[10px] ${badgeClass(
-                          lastRun.status,
-                          darkMode,
-                        )}`}
-                      >
-                        {statusIcon(lastRun.status)}
-                        {lastRun.status}
-                      </Badge>
-                    )}
-                  </div>
-
-                  {moduleRuns.length > 0 && (
-                    <div className={`mt-3 border-t pt-3 ${borderColor}`}>
-                      <div className={`mb-2 text-[10px] font-medium uppercase tracking-wide ${textWeak}`}>
-                        Recent Runs ({moduleRuns.length})
-                      </div>
-                      <div className="space-y-1">
-                        {moduleRuns.slice(0, 3).map((run) => (
-                          <div key={run.id} className="flex items-center justify-between text-[11px]">
-                            <span className="flex items-center gap-1">
-                              {statusIcon(run.status)} #{run.id}
-                            </span>
-                            <span className={textWeak}>
-                              {run.started_at_utc
-                                ? new Date(run.started_at_utc).toLocaleTimeString()
-                                : '—'}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      ) : selectedEvidenceUid ? (
-        <div className="text-center">
-          <AlertCircle className={`mx-auto mb-3 h-10 w-10 ${textWeak}`} />
-          <p className={`text-sm ${textWeak}`}>No modules registered</p>
-        </div>
-      ) : null}
 
       {/* Custom scripts */}
       <div

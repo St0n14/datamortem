@@ -98,6 +98,31 @@ services:
     networks:
       - requiem
 
+  # Docker-in-Docker - Isolated Docker daemon for sandbox script execution
+  docker-dind:
+    image: docker:27-dind
+    container_name: requiem-dind
+    privileged: true
+    environment:
+      - DOCKER_TLS_CERTDIR=
+    volumes:
+      - dind-storage:/var/lib/docker
+      - ./services/sandbox-runners:/sandbox-runners:ro
+    networks:
+      - requiem
+    command:
+      - "--storage-driver=overlay2"
+      - "--log-level=error"
+      - "--max-concurrent-downloads=3"
+      - "--max-concurrent-uploads=3"
+      - "--tls=false"
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   # Backend API - FastAPI
   api:
     build:
@@ -157,17 +182,19 @@ services:
       - DM_LAKE_ROOT=/lake
       - DM_JWT_SECRET=${DM_JWT_SECRET:-dev_secret_key_change_in_production_12345678}
       - DM_ENABLE_OTP=${DM_ENABLE_OTP:-true}
+      - DOCKER_HOST=tcp://docker-dind:2375
     volumes:
       - ./services/api:/app
       - ./services/sandbox-runners:/sandbox-runners:ro
       - lake-data:/lake
-      - /var/run/docker.sock:/var/run/docker.sock:ro
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
       opensearch:
+        condition: service_healthy
+      docker-dind:
         condition: service_healthy
     networks:
       - requiem
@@ -242,6 +269,7 @@ volumes:
   lake-data:
   hedgedoc-db-data:
   hedgedoc-uploads:
+  dind-storage:
 
 networks:
   requiem:

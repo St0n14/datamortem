@@ -6,16 +6,132 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
-import tempfile
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+
+import docker
+from docker.errors import ImageNotFound, BuildError, ContainerError, APIError
 
 from ..celery_app import celery_app
 from ..config import settings
 from ..db import SessionLocal
 from ..models import CustomScript, Evidence, TaskRun
+
+
+# Docker client instance (lazy initialization)
+_docker_client: Optional[docker.DockerClient] = None
+
+
+def _get_docker_client() -> docker.DockerClient:
+    """Get or create Docker client instance."""
+    global _docker_client
+    if _docker_client is None:
+        _docker_client = docker.from_env()
+        # Log connection info for debugging
+        docker_host = os.getenv('DOCKER_HOST', 'unix:///var/run/docker.sock')
+        print(f"[DinD] Docker client connected to: {docker_host}")
+
+        # Verify connection
+        try:
+            info = _docker_client.info()
+            print(f"[DinD] Docker daemon version: {info.get('ServerVersion', 'unknown')}")
+            print(f"[DinD] Storage driver: {info.get('Driver', 'unknown')}")
+        except Exception as e:
+            print(f"[DinD] Warning: Could not verify Docker connection: {e}")
+    return _docker_client
+
+
+def _get_lake_volume_name() -> str:
+    """
+    Get the actual name of the lake-data volume.
+    Docker Compose may prefix volume names with the project name.
+    """
+    client = _get_docker_client()
+    
+    # Try to get from the celery container first (most reliable)
+    try:
+        celery_container = client.containers.get("requiem-celery")
+        mounts = celery_container.attrs.get("Mounts", [])
+        for mount in mounts:
+            if mount.get("Destination") == "/lake":
+                volume_name = mount.get("Name")
+                if volume_name:
+                    # Verify the volume exists
+                    try:
+                        client.volumes.get(volume_name)
+                        return volume_name
+                    except docker.errors.NotFound:
+                        pass
+    except Exception as e:
+        print(f"Warning: Could not get volume from celery container: {e}")
+    
+    # Try the simple name
+    try:
+        volume = client.volumes.get("lake-data")
+        return "lake-data"
+    except docker.errors.NotFound:
+        pass
+    
+    # Try with common project prefixes (Docker Compose uses directory name as prefix)
+    # Get the project name from the container name or environment
+    possible_names = [
+        "datamortem_lake-data",  # Most likely based on directory name
+        "requiem_lake-data",
+    ]
+    for name in possible_names:
+        try:
+            volume = client.volumes.get(name)
+            return name
+        except docker.errors.NotFound:
+            pass
+    
+    # Try to infer from container names (datamortem -> datamortem_lake-data)
+    try:
+        containers = client.containers.list(all=True, filters={"name": "celery"})
+        if containers:
+            container_name = containers[0].name
+            # Extract project prefix (e.g., "datamortem_celery" -> "datamortem")
+            if "_" in container_name:
+                project_prefix = container_name.split("_")[0]
+                inferred_name = f"{project_prefix}_lake-data"
+                try:
+                    volume = client.volumes.get(inferred_name)
+                    return inferred_name
+                except docker.errors.NotFound:
+                    pass
+    except Exception:
+        pass
+    
+    # Also try to find any volume containing "lake-data"
+    try:
+        volumes = client.volumes.list()
+        for vol in volumes:
+            if "lake-data" in vol.name:
+                return vol.name
+    except Exception as e:
+        print(f"Warning: Could not list volumes: {e}")
+    
+    # Last resort: try to create or get "lake-data"
+    try:
+        volume = client.volumes.get("lake-data")
+        return "lake-data"
+    except docker.errors.NotFound:
+        # Don't create it automatically, let it fail with a clear error
+        raise RuntimeError(
+            "Volume 'lake-data' not found. "
+            "Make sure Docker Compose has created the volume. "
+            "Try running: docker-compose up -d"
+        )
+
+
+@dataclass
+class ContainerResult:
+    """Result of container execution, similar to subprocess.CompletedProcess."""
+    returncode: int
+    stdout: str
+    stderr: str
 
 
 # Language-specific configuration
@@ -58,14 +174,13 @@ def _ensure_sandbox_image_exists(language: str, language_version: str) -> str:
     image_name = config["image"]
     image_tag = f"{image_name}:{language_version}"
 
-    # Check if image exists
-    result = subprocess.run(
-        ["docker", "images", "-q", image_tag],
-        capture_output=True,
-        text=True,
-    )
+    client = _get_docker_client()
 
-    if not result.stdout.strip():
+    # Check if image exists
+    try:
+        client.images.get(image_tag)
+        print(f"Sandbox image {image_tag} already exists")
+    except ImageNotFound:
         # Image doesn't exist, build it
         dockerfile_path = Path(__file__).parent.parent.parent.parent / "sandbox-runners" / config["dockerfile"]
 
@@ -73,16 +188,25 @@ def _ensure_sandbox_image_exists(language: str, language_version: str) -> str:
             raise FileNotFoundError(f"Dockerfile not found: {dockerfile_path}")
 
         print(f"Building sandbox image: {image_tag}")
-        subprocess.run(
-            [
-                "docker", "build",
-                "-f", str(dockerfile_path),
-                "-t", image_tag,
-                "--build-arg", f"PYTHON_VERSION={language_version}" if language == "python" else f"VERSION={language_version}",
-                str(dockerfile_path.parent),
-            ],
-            check=True,
-        )
+        
+        build_args = {}
+        if language == "python":
+            build_args["PYTHON_VERSION"] = language_version
+        else:
+            build_args["VERSION"] = language_version
+
+        try:
+            image, build_logs = client.images.build(
+                path=str(dockerfile_path.parent),
+                dockerfile=config["dockerfile"],
+                tag=image_tag,
+                buildargs=build_args,
+                rm=True,  # Remove intermediate containers
+            )
+            print(f"Successfully built image: {image_tag}")
+        except BuildError as e:
+            error_msg = "\n".join([log.get("stream", "") for log in e.build_log if log.get("stream")])
+            raise RuntimeError(f"Failed to build Docker image {image_tag}: {error_msg}") from e
 
     return image_tag
 
@@ -150,32 +274,106 @@ def _run_build_in_container(
     build_command: str,
     memory_limit_mb: int,
     timeout_seconds: int,
-) -> subprocess.CompletedProcess:
+) -> ContainerResult:
     """
     Run the build command in the Docker container.
     """
-    docker_cmd = [
-        "docker", "run",
-        "--rm",
-        "--network", "none",  # No network access during build
-        "--memory", f"{memory_limit_mb}m",
-        "--memory-swap", f"{memory_limit_mb}m",
-        "--cpus", "2.0",  # Build can use more CPUs
-        "-v", f"{workspace.absolute()}:/workspace:rw",
-        "-w", "/workspace",
-        "--user", "sandbox",
-        image_tag,
-        "sh", "-c", build_command,
-    ]
+    client = _get_docker_client()
 
-    result = subprocess.run(
-        docker_cmd,
-        capture_output=True,
-        text=True,
-        timeout=timeout_seconds,
-    )
+    # Calculate relative path from /lake
+    workspace_str = str(workspace)
+    if workspace_str.startswith(settings.dm_lake_root):
+        workspace_rel = workspace_str[len(settings.dm_lake_root):].lstrip("/")
+    else:
+        workspace_rel = workspace_str.lstrip("/")
 
-    return result
+    container = None
+    try:
+        # Mount the lake-data volume and use relative paths
+        volume_name = _get_lake_volume_name()
+        workspace_path = f"/lake/{workspace_rel}"
+        
+        # Use cd in command - the volume will be mounted at /lake
+        build_cmd = f"cd {workspace_path} && {build_command}"
+        
+        # Use containers.run() with mounts API - this should work correctly
+        container = client.containers.run(
+            image_tag,
+            command=["sh", "-c", build_cmd],
+            remove=False,
+            detach=True,
+            network_disabled=True,  # No network access during build
+            mem_limit=f"{memory_limit_mb}m",
+            memswap_limit=f"{memory_limit_mb}m",
+            nano_cpus=2_000_000_000,  # 2.0 CPUs (in nanoseconds)
+            mounts=[
+                docker.types.Mount(
+                    target="/lake",
+                    source=volume_name,
+                    type="volume",
+                    read_only=False
+                )
+            ],
+            user="sandbox",
+        )
+
+        # Wait for container to finish with timeout
+        try:
+            exit_code = container.wait(timeout=timeout_seconds)
+            stdout = container.logs(stdout=True, stderr=False).decode("utf-8", errors="replace")
+            stderr = container.logs(stdout=False, stderr=True).decode("utf-8", errors="replace")
+        except Exception as wait_error:
+            # If timeout or other error, try to get logs and stop container
+            try:
+                stdout = container.logs(stdout=True, stderr=False).decode("utf-8", errors="replace") if container else ""
+                stderr = container.logs(stdout=False, stderr=True).decode("utf-8", errors="replace") if container else ""
+                if not stderr:
+                    stderr = str(wait_error)
+            except Exception:
+                stderr = str(wait_error)
+                stdout = ""
+            finally:
+                if container:
+                    try:
+                        container.stop(timeout=5)
+                    except Exception:
+                        pass
+                    try:
+                        container.remove()
+                    except Exception:
+                        pass
+            # Re-raise timeout errors
+            if "timeout" in str(wait_error).lower():
+                raise TimeoutError(f"Container execution timed out after {timeout_seconds} seconds") from wait_error
+            raise
+
+        return ContainerResult(
+            returncode=exit_code.get("StatusCode", 1),
+            stdout=stdout,
+            stderr=stderr,
+        )
+    except docker.errors.ContainerError as e:
+        return ContainerResult(
+            returncode=e.exit_status,
+            stdout=e.stdout.decode("utf-8", errors="replace") if e.stdout else "",
+            stderr=e.stderr.decode("utf-8", errors="replace") if e.stderr else str(e),
+        )
+    except (TimeoutError, docker.errors.APIError) as e:
+        # Re-raise timeout errors to be handled by caller
+        raise
+    except Exception as e:
+        return ContainerResult(
+            returncode=1,
+            stdout="",
+            stderr=str(e),
+        )
+    finally:
+        # Ensure container is cleaned up
+        if container:
+            try:
+                container.remove(force=True)
+            except Exception:
+                pass
 
 
 def _run_script_in_container(
@@ -188,63 +386,159 @@ def _run_script_in_container(
     memory_limit_mb: int,
     cpu_limit: Optional[str],
     timeout_seconds: int,
-) -> subprocess.CompletedProcess:
+) -> ContainerResult:
     """
     Run the script in the Docker container with security restrictions.
     """
-    docker_cmd = [
-        "docker", "run",
-        "--rm",
-        "--network", "none",  # No network access
-        "--read-only",  # Filesystem is read-only
-        "--tmpfs", "/tmp:rw,noexec,nosuid,size=100m",  # Writable /tmp
-        "--memory", f"{memory_limit_mb}m",
-        "--memory-swap", f"{memory_limit_mb}m",  # No swap
-        "--pids-limit", "100",  # Max 100 processes
-        "--ulimit", "nofile=1024:1024",  # Max 1024 file descriptors
-        "--security-opt", "no-new-privileges",  # Can't gain privileges
-        "--cap-drop", "ALL",  # Drop all Linux capabilities
+    client = _get_docker_client()
+
+    # Calculate relative paths from /lake
+    workspace_str = str(workspace)
+    if workspace_str.startswith(settings.dm_lake_root):
+        workspace_rel = workspace_str[len(settings.dm_lake_root):].lstrip("/")
+    else:
+        workspace_rel = workspace_str.lstrip("/")
+
+    output_dir_str = str(output_dir)
+    if output_dir_str.startswith(settings.dm_lake_root):
+        output_dir_rel = output_dir_str[len(settings.dm_lake_root):].lstrip("/")
+    else:
+        output_dir_rel = output_dir_str.lstrip("/")
+
+    # Prepare mounts - use the lake-data volume
+    volume_name = _get_lake_volume_name()
+    print(f"Using Docker volume: {volume_name} for /lake mount")
+    
+    # Set paths relative to /lake
+    workspace_path = f"/lake/{workspace_rel}"
+    output_path = f"/lake/{output_dir_rel}"
+
+    # Update OUTPUT_DIR environment variable to use the correct path
+    env_vars["OUTPUT_DIR"] = output_path
+
+    # Prepare mounts list with proper volume mount
+    mounts_list = [
+        docker.types.Mount(
+            target="/lake",
+            source=volume_name,
+            type="volume",
+            read_only=False
+        )
     ]
 
-    # CPU limit
-    if cpu_limit:
-        docker_cmd.extend(["--cpus", cpu_limit])
-    else:
-        docker_cmd.extend(["--cpus", "1.0"])  # Default 1 CPU core
-
-    # Mount workspace (read-only)
-    docker_cmd.extend(["-v", f"{workspace.absolute()}:/workspace:ro"])
-
-    # Mount output directory (read-write)
-    docker_cmd.extend(["-v", f"{output_dir}:/output:rw"])
-
     # Mount evidence if provided (read-only)
+    evidence_mount_path = None
     if evidence_path and os.path.exists(evidence_path):
-        docker_cmd.extend(["-v", f"{evidence_path}:/evidence:ro"])
-        env_vars["EVIDENCE_PATH"] = "/evidence"
+        evidence_str = str(evidence_path)
+        if evidence_str.startswith(settings.dm_lake_root):
+            evidence_rel = evidence_str[len(settings.dm_lake_root):].lstrip("/")
+            evidence_mount_path = f"/lake/{evidence_rel}"
+        else:
+            # If evidence is outside /lake, we need to mount it separately
+            # This shouldn't happen in normal operation, but handle it
+            mounts_list.append(
+                docker.types.Mount(
+                    target="/evidence",
+                    source=evidence_path,
+                    type="bind",
+                    read_only=True
+                )
+            )
+            evidence_mount_path = "/evidence"
+        env_vars["EVIDENCE_PATH"] = evidence_mount_path
 
-    # Add environment variables
-    for key, value in env_vars.items():
-        docker_cmd.extend(["-e", f"{key}={value}"])
+    # Convert CPU limit to nanoseconds
+    if cpu_limit:
+        cpu_nanos = int(float(cpu_limit) * 1_000_000_000)
+    else:
+        cpu_nanos = 1_000_000_000  # Default 1 CPU core
 
-    # Set working directory and user
-    docker_cmd.extend([
-        "-w", "/workspace",
-        "--user", "sandbox",
-        image_tag,
-    ])
+    container = None
+    try:
+        # Use cd in command - the volume will be mounted at /lake
+        entry_cmd = f"cd {workspace_path} && {entry_point}"
+        
+        # Use containers.run() with mounts API - this should work correctly
+        container = client.containers.run(
+            image_tag,
+            command=["sh", "-c", entry_cmd],
+            remove=False,
+            detach=True,
+            network_disabled=True,  # No network access
+            # Note: read_only=True conflicts with writable volume mounts
+            # Security is enforced via cap_drop, security_opt, and user restrictions
+            tmpfs={"/tmp": "rw,noexec,nosuid,size=100m"},  # Writable /tmp
+            mem_limit=f"{memory_limit_mb}m",
+            memswap_limit=f"{memory_limit_mb}m",  # No swap
+            pids_limit=100,  # Max 100 processes
+            ulimits=[
+                docker.types.Ulimit(name="nofile", soft=1024, hard=1024),  # Max 1024 file descriptors
+            ],
+            security_opt=["no-new-privileges"],  # Can't gain privileges
+            cap_drop=["ALL"],  # Drop all Linux capabilities
+            nano_cpus=cpu_nanos,
+            mounts=mounts_list,
+            user="sandbox",
+            environment=env_vars,
+        )
 
-    # Add entry point command
-    docker_cmd.extend(["sh", "-c", entry_point])
+        # Wait for container to finish with timeout
+        try:
+            exit_code = container.wait(timeout=timeout_seconds)
+            stdout = container.logs(stdout=True, stderr=False).decode("utf-8", errors="replace")
+            stderr = container.logs(stdout=False, stderr=True).decode("utf-8", errors="replace")
+        except Exception as wait_error:
+            # If timeout or other error, try to get logs and stop container
+            try:
+                stdout = container.logs(stdout=True, stderr=False).decode("utf-8", errors="replace") if container else ""
+                stderr = container.logs(stdout=False, stderr=True).decode("utf-8", errors="replace") if container else ""
+                if not stderr:
+                    stderr = str(wait_error)
+            except Exception:
+                stderr = str(wait_error)
+                stdout = ""
+            finally:
+                if container:
+                    try:
+                        container.stop(timeout=5)
+                    except Exception:
+                        pass
+                    try:
+                        container.remove()
+                    except Exception:
+                        pass
+            # Re-raise timeout errors
+            if "timeout" in str(wait_error).lower():
+                raise TimeoutError(f"Container execution timed out after {timeout_seconds} seconds") from wait_error
+            raise
 
-    result = subprocess.run(
-        docker_cmd,
-        capture_output=True,
-        text=True,
-        timeout=timeout_seconds,
-    )
-
-    return result
+        return ContainerResult(
+            returncode=exit_code.get("StatusCode", 1),
+            stdout=stdout,
+            stderr=stderr,
+        )
+    except docker.errors.ContainerError as e:
+        return ContainerResult(
+            returncode=e.exit_status,
+            stdout=e.stdout.decode("utf-8", errors="replace") if e.stdout else "",
+            stderr=e.stderr.decode("utf-8", errors="replace") if e.stderr else str(e),
+        )
+    except (TimeoutError, docker.errors.APIError) as e:
+        # Re-raise timeout errors to be handled by caller
+        raise
+    except Exception as e:
+        return ContainerResult(
+            returncode=1,
+            stdout="",
+            stderr=str(e),
+        )
+    finally:
+        # Ensure container is cleaned up
+        if container:
+            try:
+                container.remove(force=True)
+            except Exception:
+                pass
 
 
 @celery_app.task(bind=True, name="run_custom_script")
@@ -348,7 +642,7 @@ def run_custom_script(self, script_id: int, evidence_uid: str, task_run_id: int)
             env_vars = {
                 "CASE_ID": case.case_id,
                 "EVIDENCE_UID": evidence_uid,
-                "OUTPUT_DIR": "/output",
+                # OUTPUT_DIR will be set by _run_script_in_container with the correct path
             }
 
             exec_result = _run_script_in_container(
@@ -387,7 +681,7 @@ def run_custom_script(self, script_id: int, evidence_uid: str, task_run_id: int)
 
             db.commit()
 
-        except subprocess.TimeoutExpired:
+        except TimeoutError:
             run.status = "error"
             run.ended_at_utc = datetime.utcnow()
             run.error_message = f"Script execution timed out after {script.timeout_seconds} seconds"
