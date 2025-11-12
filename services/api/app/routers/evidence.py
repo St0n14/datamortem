@@ -21,7 +21,8 @@ from ..auth.permissions import (
 router = APIRouter()
 
 STANDARD_CASE_LIMIT = 1
-STANDARD_STORAGE_LIMIT_BYTES = 20 * 1024 * 1024 * 1024  # 20 GiB
+STANDARD_STORAGE_LIMIT_BYTES = 1 * 1024 * 1024 * 1024  # 1 GiB pour les analystes
+ADMIN_STORAGE_LIMIT_BYTES = 1 * 1024 * 1024 * 1024 * 1024  # 1 TiB pour les admins
 
 # ------------------------
 # DB session dependency
@@ -259,11 +260,18 @@ def get_case_storage_usage(db: Session, case_id: str) -> int:
 
 
 def enforce_storage_limit(db: Session, case_id: str, additional_bytes: int, current_user: User):
-    if is_admin_user(current_user):
-        return
     current_usage = get_case_storage_usage(db, case_id)
-    if current_usage + additional_bytes > STANDARD_STORAGE_LIMIT_BYTES:
+    
+    # Déterminer la limite selon le rôle de l'utilisateur
+    if is_admin_user(current_user):
+        limit_bytes = ADMIN_STORAGE_LIMIT_BYTES
+        limit_description = "1 TiB"
+    else:
+        limit_bytes = STANDARD_STORAGE_LIMIT_BYTES
+        limit_description = "1 GiB"
+    
+    if current_usage + additional_bytes > limit_bytes:
         raise HTTPException(
             status_code=403,
-            detail="Storage limit exceeded (20 GiB per standard case).",
+            detail=f"Storage limit exceeded ({limit_description} per case).",
         )

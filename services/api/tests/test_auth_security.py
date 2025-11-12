@@ -125,3 +125,4 @@ class TestJWTTokens:
         assert decoded["email"] == data["email"]
         assert decoded["role"] == data["role"]
 
+

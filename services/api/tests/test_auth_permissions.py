@@ -279,3 +279,4 @@ class TestRestrictQuery:
         results = test_db.execute(restricted).scalars().all()
         assert len(results) == 0
 
+

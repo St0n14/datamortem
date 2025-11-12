@@ -26,3 +26,4 @@ echo ""
 echo "✅ Tests terminés !"
 echo "📊 Rapport HTML disponible dans: htmlcov/index.html"
 
+

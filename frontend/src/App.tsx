@@ -19,6 +19,7 @@ import { EmptyCaseView } from "./components/EmptyCaseView";
 import { TimelineSearchBar } from "./components/timeline/TimelineSearchBar";
 import { TimelineCard } from "./components/timeline/TimelineCard";
 import { EventsTable } from "./components/timeline/EventsTable";
+import { FeatureFlagsDrawer } from "./components/FeatureFlagsDrawer";
 import { casesAPI, searchAPI, indexingAPI, featureFlagsAPI, type FeatureFlag } from "./services/api";
 import type { CaseIndexSummary } from "./types";
 import { EmailVerificationView } from "./views/EmailVerificationView";
@@ -83,6 +84,7 @@ function AuthenticatedApp() {
     marketplace: true,
     pipeline: true,
   });
+  const [featureFlagsDrawerOpen, setFeatureFlagsDrawerOpen] = useState(false);
   const userRole = user?.role;
   const isSuperAdmin = userRole === "superadmin";
 
@@ -158,6 +160,21 @@ function AuthenticatedApp() {
       window.removeEventListener('feature-flag-updated', handleFeatureFlagUpdate);
     };
   }, []);
+
+  // Keyboard shortcut: Ctrl/Cmd + Shift + F to open feature flags drawer (superadmin only)
+  useEffect(() => {
+    if (!isSuperAdmin) return;
+    
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'F') {
+        e.preventDefault();
+        setFeatureFlagsDrawerOpen((prev) => !prev);
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isSuperAdmin]);
 
   useEffect(() => {
     if (!currentCaseId) {
@@ -313,6 +330,11 @@ function AuthenticatedApp() {
   return (
     <div className={`flex h-screen w-full font-sans ${darkMode ? "dark" : ""} ${bgApp}`}>
       <ToastContainer darkMode={darkMode} position="top-right" />
+      <FeatureFlagsDrawer
+        darkMode={darkMode}
+        isOpen={featureFlagsDrawerOpen}
+        onClose={() => setFeatureFlagsDrawerOpen(false)}
+      />
       <Sidebar
         darkMode={darkMode}
         sidebarCollapsed={sidebarCollapsed}
@@ -326,6 +348,7 @@ function AuthenticatedApp() {
         userRole={user?.role}
         eventsCount={events.length}
         featureFlags={featureFlags}
+        onOpenFeatureFlags={() => setFeatureFlagsDrawerOpen(true)}
       />
 
       <div className="flex min-w-0 flex-1 flex-col">

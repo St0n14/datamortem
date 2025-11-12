@@ -285,3 +285,4 @@ C'est normal, ils s'empilent verticalement. Le `ToastContainer` gère automatiqu
 **Version** : 1.0  
 **Dernière mise à jour** : 2025-01-11
 
+

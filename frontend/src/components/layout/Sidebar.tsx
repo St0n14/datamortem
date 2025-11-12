@@ -16,6 +16,7 @@ import {
   LogOut,
   ChevronLeft,
   ChevronRight,
+  Settings,
 } from "lucide-react";
 
 type CaseSummary = {
@@ -45,6 +46,7 @@ interface SidebarProps {
   userRole?: Role;
   eventsCount: number;
   featureFlags?: Record<string, boolean>;
+  onOpenFeatureFlags?: () => void;
 }
 
 export function Sidebar({
@@ -60,6 +62,7 @@ export function Sidebar({
   userRole,
   eventsCount,
   featureFlags = {},
+  onOpenFeatureFlags,
 }: SidebarProps) {
   const { logout } = useAuth();
   const textWeak = darkMode ? "text-slate-500" : "text-slate-600";
@@ -178,6 +181,22 @@ export function Sidebar({
       </div>
 
       <div className="mt-auto space-y-2 shrink-0 pt-4 border-t border-slate-800">
+        {/* Bouton Feature Flags pour superadmin */}
+        {isSuperAdmin && onOpenFeatureFlags && (
+          <button
+            onClick={onOpenFeatureFlags}
+            className={`w-full flex items-center ${sidebarCollapsed ? "justify-center" : "gap-2"} rounded-lg border px-2.5 py-1.5 text-xs font-medium transition ${
+              darkMode
+                ? "border-violet-600/40 bg-violet-900/30 text-violet-100 hover:bg-violet-900/50"
+                : "border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100"
+            }`}
+            title={sidebarCollapsed ? "Fonctionnalités (Ctrl+Shift+F)" : undefined}
+          >
+            <Settings className="h-4 w-4" />
+            {!sidebarCollapsed && <span className="truncate">Fonctionnalités</span>}
+          </button>
+        )}
+
         {/* Bouton utilisateur */}
         <button
           onClick={() => onTabChange("profile")}
