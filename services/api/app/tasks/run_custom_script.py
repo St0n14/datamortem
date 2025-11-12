@@ -147,6 +147,12 @@ def _prepare_workspace(script: CustomScript, output_dir: str) -> Path:
     workspace = Path(output_dir) / "workspace"
     workspace.mkdir(parents=True, exist_ok=True)
 
+    # Make workspace writable for sandbox user
+    try:
+        os.chmod(str(workspace), 0o777)
+    except Exception as e:
+        print(f"Warning: Could not set permissions on workspace: {e}")
+
     config = LANGUAGE_CONFIG[script.language.lower()]
     source_file = workspace / config["source_filename"]
 
@@ -515,6 +521,13 @@ def run_custom_script(self, script_id: int, evidence_uid: str, task_run_id: int)
             f"{safe_name}_{script.id}",
         )
         os.makedirs(output_dir, exist_ok=True)
+
+        # Make output directory writable for sandbox user (UID 1000)
+        # This allows the sandbox container to write results
+        try:
+            os.chmod(output_dir, 0o777)  # rwxrwxrwx - writable by all
+        except Exception as e:
+            print(f"Warning: Could not set permissions on {output_dir}: {e}")
 
         run.status = "running"
         run.started_at_utc = datetime.utcnow()
