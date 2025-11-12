@@ -21,6 +21,7 @@ from ..schemas.script_schemas import (
     ScriptResponse,
     ScriptRunRequest,
     ScriptSummary,
+    ScriptUpdate,
 )
 from ..tasks.run_custom_script import run_custom_script
 
@@ -224,6 +225,33 @@ def get_script(
     if not script:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Script not found")
 
+    return script
+
+
+@router.put("/{script_id}", response_model=ScriptResponse)
+def update_script(
+    script_id: int,
+    payload: ScriptUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_superadmin_user),
+):
+    """Update script fields (source code, description, python_version, requirements) (superadmin only)."""
+    script = _get_script(script_id, db)
+    if not script:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Script not found")
+    
+    # Update only provided fields
+    if payload.source_code is not None:
+        script.source_code = payload.source_code
+    if payload.description is not None:
+        script.description = payload.description
+    if payload.python_version is not None:
+        script.python_version = payload.python_version.strip()
+    if payload.requirements is not None:
+        script.requirements = payload.requirements.strip() if payload.requirements.strip() else None
+    
+    db.commit()
+    db.refresh(script)
     return script
 
 

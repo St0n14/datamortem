@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   Check,
@@ -13,12 +13,13 @@ import {
 
 import { Button } from './ui/Button';
 import { Badge } from './ui/Badge';
-import { indexingAPI, pipelineAPI, scriptsAPI } from '../services/api';
-import type { AnalysisModule, TaskRun, Script } from '../types';
+import { indexingAPI, pipelineAPI, scriptsAPI, evidenceAPI, artifactsAPI } from '../services/api';
+import type { AnalysisModule, TaskRun, Script, Evidence } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 
 interface PipelineViewProps {
   selectedEvidenceUid: string | null;
+  setSelectedEvidenceUid: (uid: string | null) => void;
   darkMode: boolean;
   isActive?: boolean;
 }
@@ -56,15 +57,19 @@ const statusIcon = (status: TaskRun['status']) => {
   }
 };
 
-export function PipelineView({ selectedEvidenceUid, darkMode, isActive }: PipelineViewProps) {
+export function PipelineView({ selectedEvidenceUid, setSelectedEvidenceUid, darkMode, isActive }: PipelineViewProps) {
   const [modules, setModules] = useState<AnalysisModule[]>([]);
   const [taskRuns, setTaskRuns] = useState<TaskRun[]>([]);
   const [scripts, setScripts] = useState<Script[]>([]);
+  const [evidences, setEvidences] = useState<Evidence[]>([]);
+  const [evidencesLoading, setEvidencesLoading] = useState(false);
 
   const [modulesLoading, setModulesLoading] = useState(true);
   const [scriptsLoading, setScriptsLoading] = useState(false);
 
   const [runningTasks, setRunningTasks] = useState<Set<number>>(new Set());
+  const [outputModal, setOutputModal] = useState<{ open: boolean; content: string; path: string } | null>(null);
+  const [loadingOutput, setLoadingOutput] = useState(false);
   const [indexingTasks, setIndexingTasks] = useState<Set<number>>(new Set());
   const [runningScriptId, setRunningScriptId] = useState<number | null>(null);
 
@@ -80,22 +85,6 @@ export function PipelineView({ selectedEvidenceUid, darkMode, isActive }: Pipeli
   const textStrong = darkMode ? 'text-slate-100' : 'text-gray-900';
   const borderColor = darkMode ? 'border-slate-700' : 'border-gray-200';
 
-  const loadScripts = useCallback(async () => {
-    setScriptsLoading(true);
-    setScriptError(null);
-    try {
-      const data = await scriptsAPI.myScripts();
-      console.log('[PipelineView] Loaded scripts:', data);
-      setScripts(data);
-    } catch (error) {
-      console.error('[PipelineView] Failed to load user scripts:', error);
-      // Silently fail if no scripts installed - this is normal for new users
-      setScripts([]);
-    } finally {
-      setScriptsLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
     if (!selectedEvidenceUid) {
       setModules([]);
@@ -108,30 +97,27 @@ export function PipelineView({ selectedEvidenceUid, darkMode, isActive }: Pipeli
     loadTaskRuns(selectedEvidenceUid);
   }, [selectedEvidenceUid]);
 
+  const loadEvidences = async () => {
+    setEvidencesLoading(true);
+    try {
+      const data = await evidenceAPI.list();
+      setEvidences(data);
+      // Si aucune evidence n'est sélectionnée mais qu'il y en a au moins une, sélectionner la première
+      if (!selectedEvidenceUid && data.length > 0) {
+        setSelectedEvidenceUid(data[0].evidence_uid);
+      }
+    } catch (error) {
+      console.error('Failed to load evidences:', error);
+    } finally {
+      setEvidencesLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadScripts();
-  }, [loadScripts]);
-
-  // Recharger les scripts quand l'onglet Pipeline devient actif
-  // Cela permet d'afficher les scripts installés depuis le marketplace
-  useEffect(() => {
-    if (isActive) {
-      loadScripts();
-    }
-  }, [isActive, loadScripts]);
-
-  // Écouter les événements d'installation de script depuis le marketplace
-  useEffect(() => {
-    const handleScriptInstalled = () => {
-      // Recharger les scripts quand un script est installé depuis le marketplace
-      loadScripts();
-    };
-
-    window.addEventListener('script-installed', handleScriptInstalled);
-    return () => {
-      window.removeEventListener('script-installed', handleScriptInstalled);
-    };
-  }, [loadScripts]);
+    loadEvidences();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!selectedEvidenceUid || runningTasks.size === 0) {
@@ -181,6 +167,21 @@ export function PipelineView({ selectedEvidenceUid, darkMode, isActive }: Pipeli
         setTaskRuns([]);
         setRunningTasks(new Set());
       }
+    }
+  };
+
+  const loadScripts = async () => {
+    setScriptsLoading(true);
+    setScriptError(null);
+    try {
+      const data = await scriptsAPI.myScripts();
+      setScripts(data);
+    } catch (error) {
+      console.error('Failed to load user scripts:', error);
+      // Silently fail if no scripts installed - this is normal for new users
+      setScripts([]);
+    } finally {
+      setScriptsLoading(false);
     }
   };
 
@@ -255,6 +256,41 @@ export function PipelineView({ selectedEvidenceUid, darkMode, isActive }: Pipeli
     }
   };
 
+  const handleViewOutput = async (run: TaskRun) => {
+    if (!run.output_path) {
+      return;
+    }
+
+    // Get case_id from run or from evidence
+    let caseId = run.case_id;
+    if (!caseId && run.evidence_uid) {
+      const evidence = evidences.find((e) => e.evidence_uid === run.evidence_uid);
+      if (evidence) {
+        caseId = evidence.case_id;
+      }
+    }
+
+    if (!caseId) {
+      alert('Unable to determine case ID for this output');
+      return;
+    }
+
+    setLoadingOutput(true);
+    try {
+      const result = await artifactsAPI.preview(run.output_path, caseId, 500);
+      setOutputModal({
+        open: true,
+        content: result.lines.join('\n'),
+        path: run.output_path,
+      });
+    } catch (error: any) {
+      console.error('Failed to load output:', error);
+      alert(`Failed to load output: ${error.message || 'Unknown error'}`);
+    } finally {
+      setLoadingOutput(false);
+    }
+  };
+
   const getTaskRunsForModule = (moduleId: number) =>
     taskRuns.filter((run) => run.module_id === moduleId);
 
@@ -263,14 +299,8 @@ export function PipelineView({ selectedEvidenceUid, darkMode, isActive }: Pipeli
     [taskRuns],
   );
 
-  if (!selectedEvidenceUid) {
-    return (
-      <div className="p-8 text-center">
-        <AlertCircle className={`mx-auto mb-3 h-12 w-12 ${textWeak}`} />
-        <div className={`text-sm ${textWeak}`}>Select an evidence to view the pipeline.</div>
-      </div>
-    );
-  }
+  // Ne plus bloquer l'affichage si aucune evidence n'est sélectionnée
+  // On affichera le sélecteur en haut
 
   if (modulesLoading) {
     return (
@@ -282,8 +312,9 @@ export function PipelineView({ selectedEvidenceUid, darkMode, isActive }: Pipeli
 
   return (
     <div className={`p-6 space-y-6 text-[12px] ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>
+
       {/* Modules */}
-      {modules.length > 0 ? (
+      {selectedEvidenceUid && modules.length > 0 ? (
         <div>
           <div className={`text-[10px] font-medium uppercase tracking-wide mb-4 ${textWeak}`}>
             Analysis Modules ({modules.length})
@@ -373,18 +404,18 @@ export function PipelineView({ selectedEvidenceUid, darkMode, isActive }: Pipeli
             })}
           </div>
         </div>
-      ) : (
+      ) : selectedEvidenceUid ? (
         <div className="text-center">
           <AlertCircle className={`mx-auto mb-3 h-10 w-10 ${textWeak}`} />
           <p className={`text-sm ${textWeak}`}>No modules registered</p>
         </div>
-      )}
+      ) : null}
 
       {/* Custom scripts */}
       <div
         className={`rounded-xl border p-4 ${darkMode ? 'border-slate-800 bg-slate-900/80' : 'border-gray-200 bg-slate-50'}`}
       >
-        <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
           <div>
             <div className={`flex items-center gap-2 text-sm font-semibold ${textStrong}`}>
               <FileCode2 className="h-4 w-4" />
@@ -401,6 +432,51 @@ export function PipelineView({ selectedEvidenceUid, darkMode, isActive }: Pipeli
             {scriptError && <p className="text-rose-400">{scriptError}</p>}
           </div>
         </div>
+
+        {/* Evidence Selector for Scripts */}
+        {canRunCustomScripts && (
+          <div className={`mb-4 p-3 rounded-lg border ${darkMode ? 'border-slate-700 bg-slate-800/50' : 'border-gray-300 bg-white'}`}>
+            <label className={`text-xs font-semibold ${textStrong} mb-2 block`}>
+              Sélectionner une evidence pour exécuter les scripts *
+            </label>
+            <p className={`text-[11px] ${textWeak} mb-2`}>
+              Vous devez sélectionner une evidence avant de pouvoir exécuter un script.
+            </p>
+            {evidencesLoading ? (
+              <div className={`text-xs ${textWeak}`}>Chargement des evidences…</div>
+            ) : (
+              <>
+                <select
+                  value={selectedEvidenceUid || ''}
+                  onChange={(e) => setSelectedEvidenceUid(e.target.value || null)}
+                  className={`w-full px-3 py-2 rounded-lg border text-sm ${
+                    darkMode 
+                      ? 'bg-slate-900 border-slate-600 text-slate-100 focus:border-violet-500 focus:ring-violet-500/20' 
+                      : 'bg-white border-gray-400 text-gray-900 focus:border-violet-500 focus:ring-violet-500/20'
+                  } focus:outline-none focus:ring-2`}
+                  required
+                >
+                  <option value="">-- Sélectionner une evidence (obligatoire) --</option>
+                  {evidences.map((evidence) => (
+                    <option key={evidence.id} value={evidence.evidence_uid}>
+                      {evidence.evidence_uid} {evidence.case_id ? `(${evidence.case_id})` : ''}
+                    </option>
+                  ))}
+                </select>
+                {evidences.length === 0 && !evidencesLoading && (
+                  <p className={`text-xs mt-2 ${textWeak}`}>
+                    Aucune evidence disponible. Créez-en une depuis l'onglet Evidences.
+                  </p>
+                )}
+                {!selectedEvidenceUid && evidences.length > 0 && (
+                  <p className={`text-xs mt-2 text-amber-500`}>
+                    ⚠️ Veuillez sélectionner une evidence pour pouvoir exécuter les scripts.
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+        )}
         {scriptsLoading ? (
           <div className={`mt-3 text-sm ${textWeak}`}>Loading scripts…</div>
         ) : scripts.length === 0 ? (
@@ -420,7 +496,7 @@ export function PipelineView({ selectedEvidenceUid, darkMode, isActive }: Pipeli
               const scriptDisabled =
                 !selectedEvidenceUid || runningScriptId === script.id || !runnable || !canRunCustomScripts;
               const buttonTitle = !selectedEvidenceUid
-                ? 'Select an evidence first.'
+                ? '⚠️ Vous devez d\'abord sélectionner une evidence dans le sélecteur ci-dessus.'
                 : !canRunCustomScripts
                 ? 'Script execution is limited to admin and superadmin roles.'
                 : !runnable
@@ -635,11 +711,76 @@ export function PipelineView({ selectedEvidenceUid, darkMode, isActive }: Pipeli
                             View Error
                           </Button>
                         )}
+                        {run.output_path && (run.status === 'success' || run.status === 'error') && (
+                          <Button
+                            onClick={() => handleViewOutput(run)}
+                            disabled={loadingOutput}
+                            className={`h-6 px-2 text-[11px] ${
+                              darkMode
+                                ? 'border-blue-600/30 bg-blue-950/40 text-blue-200 hover:bg-blue-900/30'
+                                : 'border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100'
+                            } ${loadingOutput ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          >
+                            {loadingOutput ? (
+                              <Loader className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <>
+                                <Terminal className="mr-1 h-3 w-3" />
+                                View Output
+                              </>
+                            )}
+                          </Button>
+                        )}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Output Modal */}
+      {outputModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onClick={() => setOutputModal(null)}
+        >
+          <div
+            className={`relative w-full max-w-4xl max-h-[90vh] rounded-lg border ${
+              darkMode ? 'border-slate-700 bg-slate-900' : 'border-gray-200 bg-white'
+            }`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              className={`flex items-center justify-between border-b px-4 py-3 ${
+                darkMode ? 'border-slate-700' : 'border-gray-200'
+              }`}
+            >
+              <div>
+                <h3 className={`text-sm font-semibold ${textStrong}`}>Script Output</h3>
+                <p className={`text-xs ${textWeak} mt-1`}>{outputModal.path}</p>
+              </div>
+              <Button
+                onClick={() => setOutputModal(null)}
+                className={`h-8 w-8 p-0 ${
+                  darkMode
+                    ? 'border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700'
+                    : 'border-gray-300 bg-gray-50 text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="overflow-auto max-h-[calc(90vh-80px)] p-4">
+              <pre
+                className={`font-mono text-xs whitespace-pre-wrap break-words ${
+                  darkMode ? 'text-slate-200' : 'text-gray-900'
+                }`}
+              >
+                {outputModal.content}
+              </pre>
             </div>
           </div>
         </div>

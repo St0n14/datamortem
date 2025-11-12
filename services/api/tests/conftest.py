@@ -124,7 +124,7 @@ def test_evidence(test_db, test_case):
     evidence = Evidence(
         evidence_uid="test_evidence_001",
         case_id=test_case.case_id,
-        local_path="/lake/test_case_001/evidences/test_evidence_001/test.zip",
+        local_path="/lake/test_case_001/evidences/test_evidence_001/test.e01",
     )
     test_db.add(evidence)
     test_db.commit()

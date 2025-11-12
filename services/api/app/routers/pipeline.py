@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import select, desc, func
 from pydantic import BaseModel
 from typing import List, Optional, Dict
@@ -83,6 +83,7 @@ class TaskRunOut(BaseModel):
     module_id: int | None
     script_id: int | None
     script_name: str | None = None
+    case_id: str | None = None
 
 
 class TaskRunStatusUpdate(BaseModel):
@@ -94,6 +95,11 @@ class TaskRunStatusUpdate(BaseModel):
 # ---------- Helpers internes ----------
 
 def serialize_task_run(r: TaskRun) -> TaskRunOut:
+    # Get case_id from evidence relationship
+    case_id = None
+    if r.evidence:
+        case_id = r.evidence.case_id
+    
     return TaskRunOut(
         id=r.id,
         task_name=r.task_name,
@@ -106,6 +112,7 @@ def serialize_task_run(r: TaskRun) -> TaskRunOut:
         module_id=r.module_id,
         script_id=r.script_id,
         script_name=r.script.name if r.script else None,
+        case_id=case_id,
     )
 
 
@@ -208,7 +215,7 @@ def list_task_runs(
     Liste les TaskRuns récents, optionnellement filtrés par evidence_uid. (Requires authentication)
     Tri: plus récents d'abord.
     """
-    run_q = select(TaskRun).order_by(desc(TaskRun.id))
+    run_q = select(TaskRun).options(joinedload(TaskRun.evidence)).order_by(desc(TaskRun.id))
     if evidence_uid:
         ensure_evidence_access_by_uid(evidence_uid, current_user, db)
         run_q = run_q.where(TaskRun.evidence_uid == evidence_uid)
@@ -219,7 +226,7 @@ def list_task_runs(
         run_q = run_q.join(Evidence, TaskRun.evidence_uid == Evidence.evidence_uid)
         run_q = run_q.filter(Evidence.case_id.in_(accessible_case_ids))
 
-    runs = db.execute(run_q).scalars().all()
+    runs = db.execute(run_q).unique().scalars().all()
     return [serialize_task_run(r) for r in runs]
 
 

@@ -117,36 +117,73 @@ export const evidenceAPI = {
       body: JSON.stringify(data),
     }),
 
-  upload: async (file: File, evidenceUid: string, caseId: string) => {
+  upload: async (
+    file: File,
+    evidenceUid: string,
+    caseId: string,
+    onProgress?: (progress: number) => void
+  ) => {
     const token = getToken();
     const formData = new FormData();
     formData.append('file', file);
     formData.append('evidence_uid', evidenceUid);
     formData.append('case_id', caseId);
 
-    const headers: HeadersInit = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
 
-    const response = await fetch(`${API_BASE_URL}/evidences/upload`, {
-      method: 'POST',
-      headers,
-      body: formData,
+      // Track upload progress
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable && onProgress) {
+          const progress = (e.loaded / e.total) * 100;
+          onProgress(progress);
+        }
+      });
+
+      // Handle completion
+      xhr.addEventListener('load', () => {
+        if (xhr.status === 401 || xhr.status === 403) {
+          localStorage.removeItem('auth_token');
+          window.location.reload();
+          reject(new Error('Authentication required'));
+          return;
+        }
+
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const response = JSON.parse(xhr.responseText);
+            resolve(response);
+          } catch (e) {
+            resolve(xhr.responseText);
+          }
+        } else {
+          try {
+            const error = JSON.parse(xhr.responseText);
+            reject(new Error(error.detail || `HTTP ${xhr.status}`));
+          } catch (e) {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      });
+
+      // Handle errors
+      xhr.addEventListener('error', () => {
+        reject(new Error('Network error'));
+      });
+
+      xhr.addEventListener('abort', () => {
+        reject(new Error('Upload cancelled'));
+      });
+
+      // Start the request
+      xhr.open('POST', `${API_BASE_URL}/evidences/upload`);
+      
+      if (token) {
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      }
+
+      xhr.send(formData);
     });
-
-    if (response.status === 401 || response.status === 403) {
-      localStorage.removeItem('auth_token');
-      window.location.reload();
-      throw new Error('Authentication required');
-    }
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
-      throw new Error(error.detail || `HTTP ${response.status}`);
-    }
-
-    return response.json();
   },
 };
 
@@ -190,6 +227,16 @@ export const indexingAPI = {
       indexed_count: number;
       not_indexed_count: number;
     }>(`/indexing/case/${caseId}/summary`),
+};
+
+// Artifacts API
+export const artifactsAPI = {
+  preview: (path: string, caseId: string, maxLines: number = 100) =>
+    fetchAPI<{
+      path: string;
+      lines: string[];
+      truncated: boolean;
+    }>(`/artifact/preview?path=${encodeURIComponent(path)}&case_id=${caseId}&max_lines=${maxLines}`),
 };
 
 // Search API
@@ -241,6 +288,17 @@ export const scriptsAPI = {
     }),
 
   get: (scriptId: number) => fetchAPI<Script>(`/scripts/${scriptId}`),
+
+  update: (scriptId: number, data: {
+    source_code?: string;
+    description?: string;
+    python_version?: string;
+    requirements?: string;
+  }) =>
+    fetchAPI<Script>(`/scripts/${scriptId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
 
   run: (scriptId: number, payload: { evidence_uid: string }) =>
     fetchAPI<{ task_run_id: number; status: string; evidence_uid: string; script_id: number | null; celery_task_id?: string | null }>(

@@ -76,7 +76,7 @@ class TestEvidenceModel:
         evidence = Evidence(
             evidence_uid="test_evidence",
             case_id=test_case.case_id,
-            local_path="/lake/test/evidence.zip",
+            local_path="/lake/test/evidence.e01",
         )
         test_db.add(evidence)
         test_db.commit()
@@ -85,7 +85,7 @@ class TestEvidenceModel:
         assert evidence.id is not None
         assert evidence.evidence_uid == "test_evidence"
         assert evidence.case_id == test_case.case_id
-        assert evidence.local_path == "/lake/test/evidence.zip"
+        assert evidence.local_path == "/lake/test/evidence.e01"
         assert evidence.added_at_utc is not None
     
     def test_evidence_relationship(self, test_db, test_case, test_evidence):

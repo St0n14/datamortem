@@ -64,7 +64,7 @@ function AuthenticatedApp() {
   const [currentCaseId, setCurrentCaseId] = useState<string>(() => {
     return localStorage.getItem('currentCaseId') || '';
   });
-  const [selectedEvidenceUid] = useState<string | null>(null);
+  const [selectedEvidenceUid, setSelectedEvidenceUid] = useState<string | null>(null);
   const [cases, setCases] = useState<CaseSummary[]>([]);
   const [casesRefreshToken, setCasesRefreshToken] = useState(0);
 
@@ -411,7 +411,12 @@ function AuthenticatedApp() {
                 {activeTab === "pipeline" && (
                   <Card className={`flex-1 ${darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-slate-50"}`}>
                     <CardContent className="p-0">
-                      <PipelineView selectedEvidenceUid={selectedEvidenceUid} darkMode={darkMode} isActive={activeTab === "pipeline"} />
+                      <PipelineView 
+                        selectedEvidenceUid={selectedEvidenceUid} 
+                        setSelectedEvidenceUid={setSelectedEvidenceUid}
+                        darkMode={darkMode} 
+                        isActive={activeTab === "pipeline"} 
+                      />
                     </CardContent>
                   </Card>
                 )}

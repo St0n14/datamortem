@@ -74,7 +74,7 @@ def ensure_evidence(base_url: str, token: str, evidence_uid: str, case_id: str):
     payload = {
         "evidence_uid": evidence_uid,
         "case_id": case_id,
-        "local_path": f"/lake/{case_id}/evidences/{evidence_uid}/test.zip",
+        "local_path": f"/lake/{case_id}/evidences/{evidence_uid}/test.e01",
     }
     resp = requests.post(
         f"{base_url}/api/evidences",

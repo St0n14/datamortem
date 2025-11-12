@@ -34,6 +34,25 @@ class ScriptCreate(ScriptBase):
     source_code: str = Field(..., min_length=1)
 
 
+class ScriptUpdate(BaseModel):
+    """Schema for updating script fields"""
+    source_code: Optional[str] = Field(default=None, min_length=1)
+    description: Optional[str] = Field(default=None, max_length=2000)
+    python_version: Optional[str] = Field(default=None, description="Python runtime version (e.g., 3.11)")
+    requirements: Optional[str] = Field(
+        default=None,
+        description="Optional pip requirements, one per line",
+    )
+
+    @model_validator(mode="after")
+    def validate_fields(self):
+        if self.python_version:
+            version = self.python_version.strip()
+            if not PY_VERSION_REGEX.match(version):
+                raise ValueError("python_version must look like '3.11' or 'python3.11'")
+        return self
+
+
 class ScriptResponse(ScriptBase):
     id: int
     source_code: str

@@ -1,9 +1,9 @@
 """
-Extraction et ingestion de la $MFT à partir d'un collector Velociraptor.
+Extraction et ingestion de la $MFT à partir d'une image disque E01.
 
 Cette tâche :
-1. Décompresse le collector (ZIP) si nécessaire
-2. Recherche les artefacts $MFT bruts et les exports CSV Windows.NTFS.MFT
+1. Ouvre l'image E01 avec dissect.target
+2. Extrait la $MFT depuis le système de fichiers NTFS
 3. Parse les enregistrements via dissect.ntfs.mft
 4. Normalise les données et les écrit au format Parquet pour ingestion
 """
@@ -11,7 +11,6 @@ Cette tâche :
 from datetime import datetime, timezone
 import csv
 import os
-import zipfile
 from typing import Any, Dict, Iterable, List, Optional
 
 import pyarrow as pa
@@ -249,6 +248,8 @@ def _record_from_mft_entry(
     )
 
 
+
+
 def _record_from_csv_row(
     row: Dict[str, Any],
     *,
@@ -375,27 +376,79 @@ def _discover_mft_artifacts(root_dir: str) -> Dict[str, List[str]]:
     return {"raw": raw_files, "csv": csv_files}
 
 
-def _extract_collector(evidence_path: str, target_dir: str) -> str:
+def _parse_mft_from_evidence(
+    evidence_path: str,
+    *,
+    buffer: ParquetBuffer,
+    case_id: str,
+    evidence_uid: str,
+) -> int:
     """
-    Retourne le répertoire contenant les artefacts (extrait le ZIP si besoin).
+    Ouvre une evidence (fichier E01) avec dissect.target et extrait la MFT.
+    
+    Utilise un context manager pour garantir la libération des ressources
+    même pour les gros fichiers de plusieurs Go.
     """
-    if zipfile.is_zipfile(evidence_path):
-        with zipfile.ZipFile(evidence_path, "r") as zip_ref:
-            zip_ref.extractall(target_dir)
-        return target_dir
-
-    if os.path.isdir(evidence_path):
-        return evidence_path
-
-    raise FileNotFoundError(
-        f"Evidence path {evidence_path} is neither a ZIP file nor a directory"
-    )
+    try:
+        from dissect.target import Target  # type: ignore
+    except Exception as import_err:
+        raise RuntimeError(
+            "dissect-target is required to open E01 images"
+        ) from import_err
+    
+    if not os.path.exists(evidence_path):
+        raise FileNotFoundError(f"Evidence path not found: {evidence_path}")
+    
+    total = 0
+    source_name = "E01_image"
+    
+    # Utiliser un context manager pour garantir la fermeture propre des ressources
+    # Important pour les gros fichiers E01 de plusieurs Go
+    try:
+        with Target.open(evidence_path) as target:
+            # Parcourir tous les systèmes de fichiers dans le target
+            for fs in target.fs:
+                try:
+                    # Vérifier si le système de fichiers a une MFT (NTFS)
+                    if not hasattr(fs, "mft"):
+                        continue
+                    
+                    # Parcourir tous les enregistrements MFT
+                    # dissect.target lit de manière lazy, donc pas de problème de mémoire
+                    for entry in fs.mft.records():
+                        try:
+                            # Filtrer les enregistrements non alloués
+                            is_allocated = getattr(entry, "is_allocated", lambda: True)()
+                            if not is_allocated:
+                                continue
+                            
+                            # Créer le record normalisé
+                            record = _record_from_mft_entry(
+                                entry,
+                                case_id=case_id,
+                                evidence_uid=evidence_uid,
+                                source_name=source_name,
+                            )
+                            buffer.append(record)
+                            total += 1
+                        except Exception:
+                            # Ignorer les enregistrements invalides
+                            continue
+                except (FileNotFoundError, AttributeError, NotImplementedError):
+                    # Ignorer les systèmes de fichiers non NTFS ou non supportés
+                    continue
+    except Exception as e:
+        raise RuntimeError(
+            f"Failed to parse MFT from evidence {evidence_path}: {str(e)}"
+        ) from e
+    
+    return total
 
 
 @celery_app.task(bind=True, name="dissect_extract_mft")
 def dissect_extract_mft(self, evidence_uid: str, task_run_id: int):
     """
-    Pipeline complet d'extraction/parsing MFT avec sortie Parquet indexable.
+    Pipeline complet d'extraction/parsing MFT depuis une image E01 avec sortie Parquet indexable.
     """
     db = SessionLocal()
 
@@ -414,74 +467,28 @@ def dissect_extract_mft(self, evidence_uid: str, task_run_id: int):
         if not evidence_path or not os.path.exists(evidence_path):
             raise FileNotFoundError(f"Evidence path not found: {evidence_path}")
 
-        work_dir = f"/lake/{case_id}/{evidence_uid}/dissect_mft"
+        work_dir = f"/lake/{case_id}/evidences/{evidence_uid}/dissect_mft"
         os.makedirs(work_dir, exist_ok=True)
-
-        extract_dir = os.path.join(work_dir, "extracted")
-        os.makedirs(extract_dir, exist_ok=True)
-
-        run.progress_message = "extracting Velociraptor collector"
-        db.commit()
-
-        artifacts_root = _extract_collector(evidence_path, extract_dir)
-
-        run.progress_message = "searching for MFT artifacts"
-        db.commit()
-
-        artifacts = _discover_mft_artifacts(artifacts_root)
-        total_candidates = len(artifacts["raw"]) + len(artifacts["csv"])
-
-        if total_candidates == 0:
-            raise FileNotFoundError(
-                "No MFT artifacts found. Expected uploads/$MFT or Windows.NTFS.MFT CSV."
-            )
 
         output_file = os.path.join(work_dir, "mft.parquet")
         buffer = ParquetBuffer(output_file, PARQUET_SCHEMA, batch_size=BATCH_SIZE)
 
-        total_entries = 0
-        processed_files = []
+        run.progress_message = "opening E01 image and extracting MFT records"
+        db.commit()
 
-        for raw_path in artifacts["raw"]:
-            filename = os.path.basename(raw_path)
-            run.progress_message = f"parsing raw MFT {filename}"
-            db.commit()
-            try:
-                count = _parse_raw_mft_file(
-                    raw_path,
-                    buffer=buffer,
-                    case_id=case_id,
-                    evidence_uid=evidence_uid,
-                )
-                processed_files.append({"path": raw_path, "type": "raw", "records": count})
-                total_entries += count
-            except Exception as raw_error:
-                processed_files.append(
-                    {"path": raw_path, "type": "raw", "error": str(raw_error)}
-                )
-
-        for csv_path in artifacts["csv"]:
-            filename = os.path.basename(csv_path)
-            run.progress_message = f"parsing CSV {filename}"
-            db.commit()
-            try:
-                count = _parse_csv_mft_file(
-                    csv_path,
-                    buffer=buffer,
-                    case_id=case_id,
-                    evidence_uid=evidence_uid,
-                )
-                processed_files.append({"path": csv_path, "type": "csv", "records": count})
-                total_entries += count
-            except Exception as csv_error:
-                processed_files.append(
-                    {"path": csv_path, "type": "csv", "error": str(csv_error)}
-                )
+        # Extraire la MFT directement depuis l'image E01
+        # La fonction utilise un context manager pour gérer les ressources
+        total_entries = _parse_mft_from_evidence(
+            evidence_path,
+            buffer=buffer,
+            case_id=case_id,
+            evidence_uid=evidence_uid,
+        )
 
         buffer.close()
 
         if total_entries == 0:
-            raise RuntimeError("No MFT records parsed from discovered artifacts")
+            raise RuntimeError("No MFT records found in E01 image. Expected NTFS filesystem.")
 
         run.status = "success"
         run.ended_at_utc = datetime.utcnow()
@@ -501,7 +508,7 @@ def dissect_extract_mft(self, evidence_uid: str, task_run_id: int):
             "status": "success",
             "output_path": output_file,
             "records": total_entries,
-            "artifacts": processed_files,
+            "source": "E01_image",
         }
 
     except Exception as exc:

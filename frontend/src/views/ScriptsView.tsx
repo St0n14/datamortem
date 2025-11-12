@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, X } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
@@ -25,6 +25,8 @@ export function ScriptsView({ darkMode }: ScriptsViewProps) {
     description: '',
     source_code: '',
     language: 'python' as 'python' | 'perl' | 'rust',
+    python_version: '3.11',
+    requirements: '',
   });
   const [githubForm, setGithubForm] = useState({
     repo_url: '',
@@ -34,6 +36,11 @@ export function ScriptsView({ darkMode }: ScriptsViewProps) {
   const [isImporting, setIsImporting] = useState(false);
   const [isGithubSectionOpen, setIsGithubSectionOpen] = useState(false);
   const [isScriptsSectionOpen, setIsScriptsSectionOpen] = useState(true);
+  const [editingScript, setEditingScript] = useState<Script | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editSourceCode, setEditSourceCode] = useState('');
+  const [editRequirements, setEditRequirements] = useState('');
+  const [isUpdating, setIsUpdating] = useState(false);
   const { user } = useAuth();
   const role = user?.role ?? 'viewer';
   const canManageScripts = role === 'superadmin';
@@ -85,9 +92,11 @@ export function ScriptsView({ darkMode }: ScriptsViewProps) {
         description: formState.description,
         language: formState.language,
         source_code: formState.source_code,
+        python_version: formState.python_version,
+        requirements: formState.requirements,
       });
       setScripts((prev) => [created, ...prev]);
-      setFormState({ name: '', description: '', source_code: '', language: formState.language });
+      setFormState({ name: '', description: '', source_code: '', language: formState.language, python_version: '3.11', requirements: '' });
       setSuccess('Script enregistré avec succès.');
     } catch (err: any) {
       setError(err.message || 'Impossible de sauvegarder le script.');
@@ -192,6 +201,77 @@ export function ScriptsView({ darkMode }: ScriptsViewProps) {
     }
   };
 
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    // Vérifier que le fichier est un .py
+    if (!file.name.endsWith('.py')) {
+      setError('Veuillez sélectionner un fichier Python (.py)');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const content = e.target?.result as string;
+      setFormState((prev) => ({ ...prev, source_code: content }));
+      setSuccess('Fichier Python chargé avec succès.');
+    };
+    reader.onerror = () => {
+      setError('Erreur lors de la lecture du fichier.');
+    };
+    reader.readAsText(file);
+
+    // Réinitialiser l'input pour permettre de sélectionner le même fichier à nouveau
+    event.target.value = '';
+  };
+
+  const handleOpenEditModal = (script: Script) => {
+    setEditingScript(script);
+    setEditSourceCode(script.source_code);
+    setEditRequirements(script.requirements || '');
+    setIsEditModalOpen(true);
+    setError(null);
+    setSuccess(null);
+  };
+
+  const handleCloseEditModal = () => {
+    setIsEditModalOpen(false);
+    setEditingScript(null);
+    setEditSourceCode('');
+    setEditRequirements('');
+    setError(null);
+    setSuccess(null);
+  };
+
+  const handleUpdateScript = async () => {
+    if (!editingScript || !editSourceCode.trim()) {
+      setError('Le code source ne peut pas être vide.');
+      return;
+    }
+
+    setIsUpdating(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const updated = await scriptsAPI.update(editingScript.id, {
+        source_code: editSourceCode,
+        requirements: editRequirements.trim() || undefined,
+      });
+      setScripts((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+      handleCloseEditModal();
+      setSuccess('Script mis à jour avec succès.');
+      // Effacer le message de succès après 3 secondes
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      setError(err.message || 'Impossible de mettre à jour le script.');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4">
       <Card className={darkMode ? 'border-slate-800 bg-slate-950/60' : 'border-gray-200 bg-white'}>
@@ -284,9 +364,26 @@ export function ScriptsView({ darkMode }: ScriptsViewProps) {
               </div>
 
               <div>
-                <label className={`mb-1 block text-xs font-semibold uppercase tracking-wide ${darkMode ? 'text-slate-200' : 'text-gray-700'}`}>
-                  Code Source *
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className={`block text-xs font-semibold uppercase tracking-wide ${darkMode ? 'text-slate-200' : 'text-gray-700'}`}>
+                    Code Source *
+                  </label>
+                  <label
+                    className={`cursor-pointer text-xs px-3 py-1 rounded border ${
+                      darkMode
+                        ? 'border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700'
+                        : 'border-gray-300 bg-gray-50 text-gray-700 hover:bg-gray-100'
+                    }`}
+                  >
+                    Uploader un fichier .py
+                    <input
+                      type="file"
+                      accept=".py"
+                      onChange={handleFileUpload}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
                 <textarea
                   className={`min-h-[200px] w-full rounded-lg border px-3 py-2 font-mono text-sm ${
                     darkMode
@@ -519,6 +616,18 @@ export function ScriptsView({ darkMode }: ScriptsViewProps) {
                           Désinstaller de tous les profils
                         </Button>
                       )}
+                      {canManageScripts && (
+                        <Button
+                          className={`h-7 border px-2 text-xs ${
+                            darkMode
+                              ? 'border-blue-600/30 bg-blue-950/40 text-blue-200 hover:bg-blue-900/30'
+                              : 'border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100'
+                          }`}
+                          onClick={() => handleOpenEditModal(script)}
+                        >
+                          Modifier
+                        </Button>
+                      )}
                       <Button
                         className={`h-7 border px-2 text-xs ${
                           darkMode ? 'border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700' : 'border-gray-300 bg-slate-50 text-slate-700 hover:bg-slate-200'
@@ -607,6 +716,114 @@ export function ScriptsView({ darkMode }: ScriptsViewProps) {
           ))}
         </CardContent>
       </Card>
+
+      {/* Modal d'édition du code source */}
+      {isEditModalOpen && editingScript && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={handleCloseEditModal}
+        >
+          <div
+            className={`w-full max-w-7xl max-h-[95vh] flex flex-col rounded-lg border shadow-2xl ${
+              darkMode ? 'border-slate-800 bg-slate-950' : 'border-gray-200 bg-white'
+            }`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className={`flex items-center justify-between border-b px-6 py-4 ${
+              darkMode ? 'border-slate-800' : 'border-gray-200'
+            }`}>
+              <div>
+                <h3 className={`text-lg font-semibold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>
+                  Modifier le script
+                </h3>
+                <p className={`text-sm mt-1 ${darkMode ? 'text-slate-400' : 'text-gray-600'}`}>
+                  {editingScript.name}
+                </p>
+              </div>
+              <button
+                onClick={handleCloseEditModal}
+                className={`rounded-lg p-2 transition ${
+                  darkMode
+                    ? 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                    : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+                }`}
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 flex flex-col min-h-0 p-6 overflow-y-auto">
+              <div className="mb-4">
+                <label className={`mb-2 block text-sm font-semibold ${darkMode ? 'text-slate-200' : 'text-gray-700'}`}>
+                  Code Source *
+                </label>
+                <textarea
+                  className={`min-h-[600px] w-full rounded-lg border px-4 py-3 font-mono text-base resize-none ${
+                    darkMode
+                      ? 'border-slate-800 bg-slate-900 text-slate-100 focus:border-violet-600 focus:outline-none'
+                      : 'border-gray-300 bg-white text-gray-900 focus:border-violet-500 focus:outline-none'
+                  }`}
+                  value={editSourceCode}
+                  onChange={(e) => setEditSourceCode(e.target.value)}
+                  placeholder="# Votre script Python..."
+                />
+              </div>
+              <div>
+                <label className={`mb-2 block text-sm font-semibold ${darkMode ? 'text-slate-200' : 'text-gray-700'}`}>
+                  Dépendances (requirements.txt)
+                </label>
+                <textarea
+                  className={`min-h-[150px] w-full rounded-lg border px-4 py-3 font-mono text-sm resize-none ${
+                    darkMode
+                      ? 'border-slate-800 bg-slate-900 text-slate-100 focus:border-violet-600 focus:outline-none'
+                      : 'border-gray-300 bg-white text-gray-900 focus:border-violet-500 focus:outline-none'
+                  }`}
+                  value={editRequirements}
+                  onChange={(e) => setEditRequirements(e.target.value)}
+                  placeholder="requests==2.31.0&#10;rich>=13.0.0"
+                />
+                <p className={`mt-1 text-[11px] ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>
+                  Un package par ligne (format requirements.txt). Laisser vide si aucune dépendance.
+                </p>
+              </div>
+            </div>
+
+            <div className={`flex items-center justify-between gap-3 px-6 py-4 border-t ${
+              darkMode ? 'border-slate-800' : 'border-gray-200'
+            }`}>
+              <div className="flex-1">
+                {error && <span className="text-xs text-rose-500">{error}</span>}
+                {success && <span className="text-xs text-emerald-500">{success}</span>}
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  onClick={handleCloseEditModal}
+                  className={
+                    darkMode
+                      ? 'border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700'
+                      : 'border-gray-300 bg-gray-50 text-gray-700 hover:bg-gray-100'
+                  }
+                >
+                  Annuler
+                </Button>
+                <Button
+                  onClick={handleUpdateScript}
+                  disabled={isUpdating || !editSourceCode.trim()}
+                  className={
+                    isUpdating || !editSourceCode.trim()
+                      ? 'opacity-70 cursor-not-allowed'
+                      : darkMode
+                      ? 'border-violet-600/40 bg-violet-950/40 text-violet-200 hover:bg-violet-900/40'
+                      : 'border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100'
+                  }
+                >
+                  {isUpdating ? 'Enregistrement...' : 'Enregistrer'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

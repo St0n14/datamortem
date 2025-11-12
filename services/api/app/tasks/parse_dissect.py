@@ -1,10 +1,9 @@
 """
-Tâche Celery pour parser des evidences avec dissect.
+Tâche Celery pour parser des evidences E01 avec dissect.
 Dissect supporte de nombreux formats forensiques Windows/Linux/macOS.
 """
 from datetime import datetime
 import os
-import zipfile
 from ..celery_app import celery_app
 from ..db import SessionLocal
 from ..models import TaskRun, Evidence
@@ -13,7 +12,7 @@ from ..models import TaskRun, Evidence
 @celery_app.task(bind=True, name="parse_with_dissect")
 def parse_with_dissect(self, evidence_uid: str, task_run_id: int):
     """
-    Parse une evidence (ZIP Velociraptor) avec dissect.
+    Parse une evidence (format E01) avec dissect.
 
     Dissect peut extraire :
     - Processus (pslist)
@@ -36,52 +35,53 @@ def parse_with_dissect(self, evidence_uid: str, task_run_id: int):
         ev = db.query(Evidence).filter_by(evidence_uid=evidence_uid).one()
 
         case_id = ev.case.case_id
-        zip_path = ev.local_path  # Chemin vers collector.zip
+        e01_path = ev.local_path  # Chemin vers le fichier E01
 
         run.status = "running"
         run.started_at_utc = datetime.utcnow()
         run.progress_message = "initializing dissect parser"
         db.commit()
 
-        # Vérifier que le ZIP existe
-        if not os.path.exists(zip_path):
-            raise FileNotFoundError(f"Evidence ZIP not found: {zip_path}")
+        # Vérifier que le fichier E01 existe
+        if not os.path.exists(e01_path):
+            raise FileNotFoundError(f"Evidence E01 not found: {e01_path}")
 
         # Output directory
-        output_dir = f"/lake/{case_id}/{evidence_uid}/dissect_results"
+        output_dir = f"/lake/{case_id}/evidences/{evidence_uid}/dissect_results"
         os.makedirs(output_dir, exist_ok=True)
 
-        run.progress_message = "extracting velociraptor collector"
+        run.progress_message = "opening E01 image with dissect.target"
         db.commit()
 
-        # Extraction temporaire pour dissect
-        extract_dir = os.path.join(output_dir, "extracted")
-        os.makedirs(extract_dir, exist_ok=True)
+        # Ouvrir directement le fichier E01 avec dissect.target
+        # dissect.target peut ouvrir directement les fichiers E01 sans extraction
+        try:
+            from dissect.target import Target
+        except ImportError as import_err:
+            raise RuntimeError(
+                "dissect-target is required to parse E01 images"
+            ) from import_err
 
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(extract_dir)
+        # Utiliser un context manager pour garantir la libération des ressources
+        # Important pour les gros fichiers E01 de plusieurs Go
+        with Target.open(e01_path) as target:
+            run.progress_message = "running dissect plugins"
+            db.commit()
 
-        run.progress_message = "running dissect plugins"
-        db.commit()
+            # TODO: Ici tu intégreras dissect.target
+            # Exemple :
+            # - target.os.processes()     # Liste des processus
+            # - target.os.registry()      # Clés de registre
+            # - target.os.filesystem.mft  # $MFT timeline
+            # - target.os.browser.history # Historique navigateurs
+            # - target.os.network.connections
+            # - etc.
 
-        # TODO: Ici tu intégreras dissect.target
-        # Exemple :
-        # from dissect.target import Target
-        # target = Target.open(extract_dir)
-        #
-        # Plugins disponibles :
-        # - target.os.processes()     # Liste des processus
-        # - target.os.registry()      # Clés de registre
-        # - target.os.filesystem.mft  # $MFT timeline
-        # - target.os.browser.history # Historique navigateurs
-        # - target.os.network.connections
-        # - etc.
+            # Pour l'instant, on simule le succès
+            output_file = os.path.join(output_dir, "dissect_artifacts.jsonl")
 
-        # Pour l'instant, on simule le succès
-        output_file = os.path.join(output_dir, "dissect_artifacts.jsonl")
-
-        with open(output_file, "w") as f:
-            f.write('{"status": "dissect parsing placeholder"}\n')
+            with open(output_file, "w") as f:
+                f.write('{"status": "dissect parsing placeholder"}\n')
 
         run.status = "success"
         run.ended_at_utc = datetime.utcnow()

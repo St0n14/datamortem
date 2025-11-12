@@ -4,7 +4,7 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 from datetime import datetime
 import os
-import zipfile
+import re
 import shutil
 
 from ..db import SessionLocal
@@ -140,32 +140,6 @@ def create_evidence(
     return ev
 
 
-def validate_velociraptor_zip(zip_path: str) -> bool:
-    """
-    Valide qu'un ZIP est un collector Velociraptor offline.
-
-    Structure typique Velociraptor :
-    - uploads/ (contient les artifacts collectés)
-    - results/ (contient les résultats CSV/JSON)
-    - Velociraptor.log ou collection.log
-    """
-    try:
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            file_list = zip_ref.namelist()
-
-            # Vérifier présence de dossiers typiques Velociraptor
-            has_uploads = any('uploads/' in f for f in file_list)
-            has_results = any('results/' in f for f in file_list)
-            has_log = any('.log' in f.lower() for f in file_list)
-
-            # Au moins un indicateur doit être présent
-            return has_uploads or has_results or has_log
-    except zipfile.BadZipFile:
-        return False
-    except Exception:
-        return False
-
-
 @router.post("/evidences/upload", response_model=EvidenceOut, status_code=201)
 async def upload_evidence(
     file: UploadFile = File(...),
@@ -175,9 +149,9 @@ async def upload_evidence(
     current_user: User = Depends(get_current_active_user)
 ):
     """
-    Upload d'une evidence (ZIP Velociraptor offline collector).
+    Upload d'une evidence (format E01 - Expert Witness Disk Image).
 
-    Le ZIP sera conservé tel quel pour parsing ultérieur avec dissect.
+    L'image E01 sera conservée tel quel pour parsing ultérieur avec dissect.
     (Requires authentication)
     """
     ensure_has_write_permissions(current_user)
@@ -194,36 +168,58 @@ async def upload_evidence(
     if existing:
         raise HTTPException(status_code=409, detail="evidence_uid already exists")
 
-    # 3. Vérifier que c'est un ZIP
-    if not file.filename.endswith('.zip'):
-        raise HTTPException(status_code=400, detail="Only ZIP files are accepted")
+    # 3. Vérifier que c'est un fichier E01
+    # Accepter .e01, .E01, et les fichiers segmentés (.e02, .e03, etc. jusqu'à .e99)
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Filename is required")
+    
+    # Pattern pour fichiers E01 : .e01 à .e99 (Expert Witness Disk Image)
+    e01_pattern = re.compile(r'\.e\d{2}$', re.IGNORECASE)
+    if not e01_pattern.search(file.filename):
+        raise HTTPException(
+            status_code=400, 
+            detail="Only E01 files (Expert Witness Disk Image) are accepted. Format: .e01, .E01, or segmented files (.e02, .e03, etc.)"
+        )
 
     # 4. Créer le répertoire de destination
     evidence_dir = os.path.join("/lake", case_id, "evidences", evidence_uid)
     os.makedirs(evidence_dir, exist_ok=True)
 
-    # 5. Sauvegarder le ZIP
-    zip_path = os.path.join(evidence_dir, "collector.zip")
+    # 5. Sauvegarder le fichier E01
+    # Utiliser le nom original du fichier ou evidence.e01 si pas de nom
+    original_filename = file.filename or "evidence.e01"
+    e01_path = os.path.join(evidence_dir, original_filename)
 
     try:
-        # Écrire le fichier uploadé
-        content = await file.read()
-        enforce_storage_limit(db, case_id, len(content), current_user)
-        with open(zip_path, "wb") as buffer:
-            buffer.write(content)
+        # Écrire le fichier uploadé en streaming pour gérer les gros fichiers (plusieurs Go)
+        # Utiliser un buffer de 8MB pour éviter de charger tout le fichier en mémoire
+        chunk_size = 8 * 1024 * 1024  # 8MB
+        total_size = 0
+        
+        with open(e01_path, "wb") as buffer:
+            while True:
+                chunk = await file.read(chunk_size)
+                if not chunk:
+                    break
+                buffer.write(chunk)
+                total_size += len(chunk)
+                
+                # Vérifier la limite de stockage après chaque chunk
+                # pour éviter d'écrire tout le fichier avant de rejeter
+                try:
+                    enforce_storage_limit(db, case_id, total_size, current_user)
+                except HTTPException:
+                    # Nettoyer le fichier partiellement écrit en cas de dépassement
+                    buffer.close()
+                    if os.path.exists(e01_path):
+                        os.remove(e01_path)
+                    raise
 
-        # 6. Valider que c'est un collector Velociraptor
-        if not validate_velociraptor_zip(zip_path):
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid Velociraptor collector format. Expected uploads/, results/, or log files."
-            )
-
-        # 7. Créer l'Evidence en DB
+        # 6. Créer l'Evidence en DB
         ev = Evidence(
             evidence_uid=evidence_uid,
             case_id=case_id,
-            local_path=zip_path,  # Pointe vers le ZIP, pas extrait
+            local_path=e01_path,  # Pointe vers le fichier E01
         )
 
         db.add(ev)
@@ -237,11 +233,6 @@ async def upload_evidence(
         if os.path.exists(evidence_dir):
             shutil.rmtree(evidence_dir)
         raise
-    except zipfile.BadZipFile:
-        # Nettoyer en cas d'erreur
-        if os.path.exists(evidence_dir):
-            shutil.rmtree(evidence_dir)
-        raise HTTPException(status_code=400, detail="Invalid ZIP file")
     except Exception as e:
         # Nettoyer en cas d'erreur
         if os.path.exists(evidence_dir):

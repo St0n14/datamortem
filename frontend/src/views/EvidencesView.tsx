@@ -3,6 +3,7 @@ import { Card, CardContent } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { Input } from "../components/ui/Input";
 import { Badge } from "../components/ui/Badge";
+import { ProgressBar } from "../components/ui/ProgressBar";
 import { Plus, HardDrive, Trash2, X, BookOpen } from "lucide-react";
 import { casesAPI, evidenceAPI } from "../services/api";
 import { useAuth } from "../contexts/AuthContext";
@@ -41,6 +42,7 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   // Form state for new case
   const [newCase, setNewCase] = useState({
@@ -114,15 +116,23 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
     }
 
     if (!selectedFile) {
-      setError("Please select a Velociraptor collector ZIP file");
+      setError("Veuillez sélectionner un fichier E01");
       return;
     }
 
     setUploading(true);
+    setUploadProgress(0);
 
     try {
-      await evidenceAPI.upload(selectedFile, newEvidence.evidence_uid, newEvidence.case_id);
-      setSuccess("Evidence uploaded and extracted successfully!");
+      await evidenceAPI.upload(
+        selectedFile,
+        newEvidence.evidence_uid,
+        newEvidence.case_id,
+        (progress) => {
+          setUploadProgress(progress);
+        }
+      );
+      setSuccess("Evidence E01 uploadée avec succès !");
       setShowAddModal(false);
       setNewEvidence({
         evidence_uid: "",
@@ -130,9 +140,11 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
         local_path: "",
       });
       setSelectedFile(null);
+      setUploadProgress(0);
       loadEvidences();
     } catch (err: any) {
       setError(err.message);
+      setUploadProgress(0);
     } finally {
       setUploading(false);
     }
@@ -525,7 +537,14 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
             <CardContent className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className={`text-lg font-semibold ${textStrong}`}>Add New Evidence</h3>
-                <button onClick={() => setShowAddModal(false)} className={textWeak}>
+                <button 
+                  onClick={() => {
+                    setShowAddModal(false);
+                    setUploadProgress(0);
+                  }} 
+                  disabled={uploading}
+                  className={`${textWeak} ${uploading ? 'opacity-50 cursor-not-allowed' : 'hover:text-slate-300 dark:hover:text-slate-200'}`}
+                >
                   <X className="h-5 w-5" />
                 </button>
               </div>
@@ -562,12 +581,12 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
 
                 <div>
                   <label className={`block text-sm font-medium mb-1 ${textStrong}`}>
-                    Velociraptor Offline Collector (ZIP) *
+                    Image disque E01 (Expert Witness Disk Image) *
                   </label>
                   <div className={`border-2 border-dashed rounded-lg p-4 ${darkMode ? "border-slate-700 bg-slate-800" : "border-gray-300 bg-gray-50"}`}>
                     <input
                       type="file"
-                      accept=".zip"
+                      accept=".e01,.E01,.e02,.E02,.e03,.E03,.e04,.E04,.e05,.E05,.e06,.E06,.e07,.E07,.e08,.E08,.e09,.E09,.e10,.E10,.e11,.E11,.e12,.E12,.e13,.E13,.e14,.E14,.e15,.E15"
                       onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
                       className="hidden"
                       id="file-upload"
@@ -578,14 +597,32 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
                     >
                       <HardDrive className={`h-8 w-8 ${textWeak}`} />
                       <span className={`text-sm ${textStrong}`}>
-                        {selectedFile ? selectedFile.name : "Click to select ZIP file"}
+                        {selectedFile ? selectedFile.name : "Cliquez pour sélectionner un fichier E01"}
                       </span>
                       <span className={`text-xs ${textWeak}`}>
-                        Only Velociraptor offline collector ZIP files
+                        Formats acceptés : .e01, .E01 (images disques forensiques)
                       </span>
                     </label>
                   </div>
                 </div>
+
+                {uploading && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className={`text-sm font-medium ${textStrong}`}>
+                        Upload en cours...
+                      </span>
+                      <span className={`text-sm ${textWeak}`}>
+                        {selectedFile ? `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB` : ''}
+                      </span>
+                    </div>
+                    <ProgressBar 
+                      progress={uploadProgress} 
+                      className="w-full"
+                      label={`${Math.round(uploadProgress)}%`}
+                    />
+                  </div>
+                )}
 
                 <div className="flex gap-2 pt-4">
                   <Button
@@ -597,10 +634,14 @@ export function EvidencesView({ darkMode, currentCaseId, onCaseChange, onCasesUp
                         : "border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100"
                     }`}
                   >
-                    {uploading ? "Uploading..." : "Upload Evidence"}
+                    {uploading ? "Upload en cours..." : "Upload Evidence"}
                   </Button>
                   <Button
-                    onClick={() => setShowAddModal(false)}
+                    onClick={() => {
+                      setShowAddModal(false);
+                      setUploadProgress(0);
+                    }}
+                    disabled={uploading}
                     className={`${darkMode ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800" : "border-gray-300 bg-slate-50 text-slate-800 hover:bg-slate-200"}`}
                   >
                     Cancel
