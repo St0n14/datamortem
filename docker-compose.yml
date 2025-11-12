@@ -108,6 +108,7 @@ services:
     volumes:
       - dind-storage:/var/lib/docker
       - ./services/sandbox-runners:/sandbox-runners:ro
+      - lake-data:/lake
     networks:
       - requiem
     command:

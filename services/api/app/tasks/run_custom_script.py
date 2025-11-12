@@ -43,87 +43,15 @@ def _get_docker_client() -> docker.DockerClient:
     return _docker_client
 
 
-def _get_lake_volume_name() -> str:
+def _get_lake_mount_path() -> str:
     """
-    Get the actual name of the lake-data volume.
-    Docker Compose may prefix volume names with the project name.
+    Get the /lake mount path for DinD.
+    With DinD, /lake is bind-mounted from the host into the DinD daemon,
+    so we can directly mount it into sandbox containers using bind mounts.
     """
-    client = _get_docker_client()
-    
-    # Try to get from the celery container first (most reliable)
-    try:
-        celery_container = client.containers.get("requiem-celery")
-        mounts = celery_container.attrs.get("Mounts", [])
-        for mount in mounts:
-            if mount.get("Destination") == "/lake":
-                volume_name = mount.get("Name")
-                if volume_name:
-                    # Verify the volume exists
-                    try:
-                        client.volumes.get(volume_name)
-                        return volume_name
-                    except docker.errors.NotFound:
-                        pass
-    except Exception as e:
-        print(f"Warning: Could not get volume from celery container: {e}")
-    
-    # Try the simple name
-    try:
-        volume = client.volumes.get("lake-data")
-        return "lake-data"
-    except docker.errors.NotFound:
-        pass
-    
-    # Try with common project prefixes (Docker Compose uses directory name as prefix)
-    # Get the project name from the container name or environment
-    possible_names = [
-        "datamortem_lake-data",  # Most likely based on directory name
-        "requiem_lake-data",
-    ]
-    for name in possible_names:
-        try:
-            volume = client.volumes.get(name)
-            return name
-        except docker.errors.NotFound:
-            pass
-    
-    # Try to infer from container names (datamortem -> datamortem_lake-data)
-    try:
-        containers = client.containers.list(all=True, filters={"name": "celery"})
-        if containers:
-            container_name = containers[0].name
-            # Extract project prefix (e.g., "datamortem_celery" -> "datamortem")
-            if "_" in container_name:
-                project_prefix = container_name.split("_")[0]
-                inferred_name = f"{project_prefix}_lake-data"
-                try:
-                    volume = client.volumes.get(inferred_name)
-                    return inferred_name
-                except docker.errors.NotFound:
-                    pass
-    except Exception:
-        pass
-    
-    # Also try to find any volume containing "lake-data"
-    try:
-        volumes = client.volumes.list()
-        for vol in volumes:
-            if "lake-data" in vol.name:
-                return vol.name
-    except Exception as e:
-        print(f"Warning: Could not list volumes: {e}")
-    
-    # Last resort: try to create or get "lake-data"
-    try:
-        volume = client.volumes.get("lake-data")
-        return "lake-data"
-    except docker.errors.NotFound:
-        # Don't create it automatically, let it fail with a clear error
-        raise RuntimeError(
-            "Volume 'lake-data' not found. "
-            "Make sure Docker Compose has created the volume. "
-            "Try running: docker-compose up -d"
-        )
+    # In DinD setup, /lake is mounted as a volume in the dind container
+    # We can mount it directly using bind mounts from /lake
+    return "/lake"
 
 
 @dataclass
@@ -289,14 +217,14 @@ def _run_build_in_container(
 
     container = None
     try:
-        # Mount the lake-data volume and use relative paths
-        volume_name = _get_lake_volume_name()
+        # Mount /lake using bind mount (available in DinD)
+        lake_mount_path = _get_lake_mount_path()
         workspace_path = f"/lake/{workspace_rel}"
-        
-        # Use cd in command - the volume will be mounted at /lake
+
+        # Use cd in command - /lake will be bind-mounted
         build_cmd = f"cd {workspace_path} && {build_command}"
-        
-        # Use containers.run() with mounts API - this should work correctly
+
+        # Use containers.run() with bind mounts (works with DinD)
         container = client.containers.run(
             image_tag,
             command=["sh", "-c", build_cmd],
@@ -309,8 +237,8 @@ def _run_build_in_container(
             mounts=[
                 docker.types.Mount(
                     target="/lake",
-                    source=volume_name,
-                    type="volume",
+                    source=lake_mount_path,
+                    type="bind",
                     read_only=False
                 )
             ],
@@ -405,10 +333,10 @@ def _run_script_in_container(
     else:
         output_dir_rel = output_dir_str.lstrip("/")
 
-    # Prepare mounts - use the lake-data volume
-    volume_name = _get_lake_volume_name()
-    print(f"Using Docker volume: {volume_name} for /lake mount")
-    
+    # Prepare mounts - use bind mount to /lake (available in DinD)
+    lake_mount_path = _get_lake_mount_path()
+    print(f"Using bind mount: {lake_mount_path} for /lake")
+
     # Set paths relative to /lake
     workspace_path = f"/lake/{workspace_rel}"
     output_path = f"/lake/{output_dir_rel}"
@@ -416,12 +344,12 @@ def _run_script_in_container(
     # Update OUTPUT_DIR environment variable to use the correct path
     env_vars["OUTPUT_DIR"] = output_path
 
-    # Prepare mounts list with proper volume mount
+    # Prepare mounts list with bind mount
     mounts_list = [
         docker.types.Mount(
             target="/lake",
-            source=volume_name,
-            type="volume",
+            source=lake_mount_path,
+            type="bind",
             read_only=False
         )
     ]
