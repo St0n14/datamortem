@@ -29,7 +29,10 @@ def _get_docker_client() -> docker.DockerClient:
     """Get or create Docker client instance."""
     global _docker_client
     if _docker_client is None:
-        _docker_client = docker.from_env()
+        # Increase timeout to handle long-running operations
+        # Default is 60s, we set it to 10 minutes for script execution
+        _docker_client = docker.from_env(timeout=600)
+
         # Log connection info for debugging
         docker_host = os.getenv('DOCKER_HOST', 'unix:///var/run/docker.sock')
         print(f"[DinD] Docker client connected to: {docker_host}")
