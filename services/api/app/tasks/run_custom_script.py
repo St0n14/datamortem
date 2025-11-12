@@ -9,7 +9,7 @@ import os
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Callable
 
 import docker
 from docker.errors import ImageNotFound, BuildError, ContainerError, APIError
@@ -18,6 +18,7 @@ from ..celery_app import celery_app
 from ..config import settings
 from ..db import SessionLocal
 from ..models import CustomScript, Evidence, TaskRun
+from .index_results import index_results_task
 
 
 # Docker client instance (lazy initialization)
@@ -208,6 +209,7 @@ def _run_build_in_container(
     build_command: str,
     memory_limit_mb: int,
     timeout_seconds: int,
+    check_cancelled: Optional[Callable[[], bool]] = None,
 ) -> ContainerResult:
     """
     Run the build command in the Docker container.
@@ -251,11 +253,41 @@ def _run_build_in_container(
             user="sandbox",
         )
 
-        # Wait for container to finish with timeout
+        # Wait for container to finish with timeout, checking for cancellation periodically
         try:
-            exit_code = container.wait(timeout=timeout_seconds)
+            # Use a shorter timeout to check for cancellation periodically
+            check_interval = 5  # Check every 5 seconds
+            elapsed = 0
+            exit_code = None
+            
+            while elapsed < timeout_seconds:
+                # Check if task was cancelled
+                if check_cancelled and check_cancelled():
+                    print(f"Task cancelled, stopping build container...")
+                    container.stop(timeout=5)
+                    raise InterruptedError("Task was cancelled by user")
+                
+                # Wait with a short timeout to allow periodic checks
+                remaining_timeout = min(check_interval, timeout_seconds - elapsed)
+                try:
+                    exit_code = container.wait(timeout=remaining_timeout)
+                    break  # Container finished
+                except Exception as wait_error:
+                    # If timeout, continue loop to check cancellation
+                    if "timeout" in str(wait_error).lower():
+                        elapsed += check_interval
+                        continue
+                    raise
+            
+            # If we exited the loop without getting exit_code, it means timeout
+            if exit_code is None:
+                raise TimeoutError(f"Container execution timed out after {timeout_seconds} seconds")
+            
             stdout = container.logs(stdout=True, stderr=False).decode("utf-8", errors="replace")
             stderr = container.logs(stdout=False, stderr=True).decode("utf-8", errors="replace")
+        except InterruptedError:
+            # Task was cancelled, re-raise to be handled by caller
+            raise
         except Exception as wait_error:
             # If timeout or other error, try to get logs and stop container
             try:
@@ -292,8 +324,8 @@ def _run_build_in_container(
             stdout=e.stdout.decode("utf-8", errors="replace") if e.stdout else "",
             stderr=e.stderr.decode("utf-8", errors="replace") if e.stderr else str(e),
         )
-    except (TimeoutError, docker.errors.APIError) as e:
-        # Re-raise timeout errors to be handled by caller
+    except (TimeoutError, docker.errors.APIError, InterruptedError) as e:
+        # Re-raise timeout errors and cancellation to be handled by caller
         raise
     except Exception as e:
         return ContainerResult(
@@ -320,6 +352,7 @@ def _run_script_in_container(
     memory_limit_mb: int,
     cpu_limit: Optional[str],
     timeout_seconds: int,
+    check_cancelled: Optional[Callable[[], bool]] = None,
 ) -> ContainerResult:
     """
     Run the script in the Docker container with security restrictions.
@@ -416,11 +449,41 @@ def _run_script_in_container(
             environment=env_vars,
         )
 
-        # Wait for container to finish with timeout
+        # Wait for container to finish with timeout, checking for cancellation periodically
         try:
-            exit_code = container.wait(timeout=timeout_seconds)
+            # Use a shorter timeout to check for cancellation periodically
+            check_interval = 5  # Check every 5 seconds
+            elapsed = 0
+            exit_code = None
+            
+            while elapsed < timeout_seconds:
+                # Check if task was cancelled
+                if check_cancelled and check_cancelled():
+                    print(f"Task cancelled, stopping script container...")
+                    container.stop(timeout=5)
+                    raise InterruptedError("Task was cancelled by user")
+                
+                # Wait with a short timeout to allow periodic checks
+                remaining_timeout = min(check_interval, timeout_seconds - elapsed)
+                try:
+                    exit_code = container.wait(timeout=remaining_timeout)
+                    break  # Container finished
+                except Exception as wait_error:
+                    # If timeout, continue loop to check cancellation
+                    if "timeout" in str(wait_error).lower():
+                        elapsed += check_interval
+                        continue
+                    raise
+            
+            # If we exited the loop without getting exit_code, it means timeout
+            if exit_code is None:
+                raise TimeoutError(f"Container execution timed out after {timeout_seconds} seconds")
+            
             stdout = container.logs(stdout=True, stderr=False).decode("utf-8", errors="replace")
             stderr = container.logs(stdout=False, stderr=True).decode("utf-8", errors="replace")
+        except InterruptedError:
+            # Task was cancelled, re-raise to be handled by caller
+            raise
         except Exception as wait_error:
             # If timeout or other error, try to get logs and stop container
             try:
@@ -457,8 +520,8 @@ def _run_script_in_container(
             stdout=e.stdout.decode("utf-8", errors="replace") if e.stdout else "",
             stderr=e.stderr.decode("utf-8", errors="replace") if e.stderr else str(e),
         )
-    except (TimeoutError, docker.errors.APIError) as e:
-        # Re-raise timeout errors to be handled by caller
+    except (TimeoutError, docker.errors.APIError, InterruptedError) as e:
+        # Re-raise timeout errors and cancellation to be handled by caller
         raise
     except Exception as e:
         return ContainerResult(
@@ -473,6 +536,53 @@ def _run_script_in_container(
                 container.remove(force=True)
             except Exception:
                 pass
+
+
+def _auto_index_script_results(output_dir: str, script: CustomScript, run: TaskRun) -> None:
+    """
+    Automatically trigger indexation if the script produced indexable files.
+
+    Searches for .jsonl, .csv, or .parquet files in the output directory
+    and triggers indexation tasks for each one found.
+    """
+    indexable_extensions = {".jsonl", ".csv", ".parquet"}
+    indexed_count = 0
+
+    try:
+        output_path = Path(output_dir)
+
+        # Search for indexable files in output directory
+        for file_path in output_path.rglob("*"):
+            if file_path.is_file() and file_path.suffix.lower() in indexable_extensions:
+                # Skip the output.txt file
+                if file_path.name == "output.txt":
+                    continue
+
+                parser_name = f"custom_script.{script.name}"
+
+                print(f"[Auto-Index] Triggering indexation for {file_path}")
+                print(f"  Parser: {parser_name}")
+                print(f"  Task Run: {run.id}")
+
+                # Trigger async indexation task
+                try:
+                    index_results_task.delay(
+                        task_run_id=run.id,
+                        file_path=str(file_path),
+                        parser_name=parser_name
+                    )
+                    indexed_count += 1
+                except Exception as index_error:
+                    print(f"[Auto-Index] Failed to trigger indexation for {file_path}: {index_error}")
+
+        if indexed_count > 0:
+            print(f"[Auto-Index] Triggered indexation for {indexed_count} file(s)")
+        else:
+            print(f"[Auto-Index] No indexable files found in {output_dir}")
+
+    except Exception as e:
+        # Don't fail the main task if auto-indexation fails
+        print(f"[Auto-Index] Error during auto-indexation: {e}")
 
 
 @celery_app.task(bind=True, name="run_custom_script")
@@ -534,6 +644,18 @@ def run_custom_script(self, script_id: int, evidence_uid: str, task_run_id: int)
         run.progress_message = "preparing docker environment"
         db.commit()
 
+        # Function to check if task was cancelled
+        def check_cancelled() -> bool:
+            """Check if the task was cancelled by checking the database."""
+            db_check = SessionLocal()
+            try:
+                run_check = db_check.query(TaskRun).filter_by(id=task_run_id).one_or_none()
+                if run_check and run_check.status == "killed":
+                    return True
+                return False
+            finally:
+                db_check.close()
+
         try:
             # Ensure Docker image exists
             run.progress_message = f"building {script.language} sandbox image"
@@ -564,6 +686,7 @@ def run_custom_script(self, script_id: int, evidence_uid: str, task_run_id: int)
                     build_command=build_command,
                     memory_limit_mb=script.memory_limit_mb,
                     timeout_seconds=min(script.timeout_seconds, 600),  # Max 10 min for build
+                    check_cancelled=check_cancelled,
                 )
 
                 if build_result.returncode != 0:
@@ -596,6 +719,7 @@ def run_custom_script(self, script_id: int, evidence_uid: str, task_run_id: int)
                 memory_limit_mb=script.memory_limit_mb,
                 cpu_limit=script.cpu_limit,
                 timeout_seconds=script.timeout_seconds,
+                check_cancelled=check_cancelled,
             )
 
             # Save output
@@ -613,15 +737,26 @@ def run_custom_script(self, script_id: int, evidence_uid: str, task_run_id: int)
                 run.ended_at_utc = datetime.utcnow()
                 run.output_path = output_path
                 run.progress_message = "script execution complete"
+                db.commit()
+
+                # Auto-index results if indexable files exist
+                _auto_index_script_results(output_dir, script, run)
             else:
                 run.status = "error"
                 run.ended_at_utc = datetime.utcnow()
                 run.output_path = output_path
                 run.error_message = f"Script exited with code {exec_result.returncode}"
                 run.progress_message = "script execution failed"
+                db.commit()
 
+        except InterruptedError:
+            # Task was cancelled
+            run.status = "killed"
+            run.ended_at_utc = datetime.utcnow()
+            run.error_message = "Task was cancelled by user"
+            run.progress_message = "cancelled"
             db.commit()
-
+            return
         except TimeoutError:
             run.status = "error"
             run.ended_at_utc = datetime.utcnow()
