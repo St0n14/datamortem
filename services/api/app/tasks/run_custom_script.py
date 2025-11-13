@@ -26,16 +26,23 @@ _docker_client: Optional[docker.DockerClient] = None
 
 
 def _get_docker_client() -> docker.DockerClient:
-    """Get or create Docker client instance."""
+    """Get or create Docker client instance with increased timeouts."""
     global _docker_client
     if _docker_client is None:
-        # Increase timeout to handle long-running operations
-        # Default is 60s, we set it to 10 minutes for script execution
-        _docker_client = docker.from_env(timeout=600)
+        # Create client with environment settings
+        base_url = os.getenv('DOCKER_HOST', 'unix:///var/run/docker.sock')
+
+        # For DinD over TCP, we need to increase both API timeout and HTTP timeout
+        # The timeout parameter in docker.from_env() only sets the HTTP read timeout
+        # We need to set it high enough for long-running scripts
+        _docker_client = docker.DockerClient(
+            base_url=base_url,
+            timeout=900,  # 15 minutes timeout for HTTP operations
+            tls=False,
+        )
 
         # Log connection info for debugging
-        docker_host = os.getenv('DOCKER_HOST', 'unix:///var/run/docker.sock')
-        print(f"[DinD] Docker client connected to: {docker_host}")
+        print(f"[DinD] Docker client connected to: {base_url} (timeout=900s)")
 
         # Verify connection
         try:
