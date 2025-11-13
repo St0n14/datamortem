@@ -265,34 +265,44 @@ def _run_build_in_container(
 
         # Wait for container to finish with timeout, checking for cancellation periodically
         try:
-            # Use a shorter timeout to check for cancellation periodically
-            check_interval = 5  # Check every 5 seconds
+            import time
+            # Poll container status instead of using wait() to avoid HTTP timeout issues
+            check_interval = 2  # Check every 2 seconds
             elapsed = 0
-            exit_code = None
-            
+
             while elapsed < timeout_seconds:
                 # Check if task was cancelled
                 if check_cancelled and check_cancelled():
                     print(f"Task cancelled, stopping build container...")
                     container.stop(timeout=5)
                     raise InterruptedError("Task was cancelled by user")
-                
-                # Wait with a short timeout to allow periodic checks
-                remaining_timeout = min(check_interval, timeout_seconds - elapsed)
+
+                # Reload container state
                 try:
-                    exit_code = container.wait(timeout=remaining_timeout)
-                    break  # Container finished
-                except Exception as wait_error:
-                    # If timeout, continue loop to check cancellation
-                    if "timeout" in str(wait_error).lower():
-                        elapsed += check_interval
-                        continue
-                    raise
-            
-            # If we exited the loop without getting exit_code, it means timeout
-            if exit_code is None:
+                    container.reload()
+                    status = container.status
+
+                    # Check if container has finished
+                    if status in ("exited", "dead"):
+                        break
+
+                    # Container still running, wait a bit
+                    time.sleep(check_interval)
+                    elapsed += check_interval
+
+                except Exception as reload_error:
+                    # If reload fails, container might be gone - try to continue
+                    print(f"Warning: container.reload() failed: {reload_error}")
+                    break
+
+            # Check if we timed out
+            if elapsed >= timeout_seconds and container.status == "running":
                 raise TimeoutError(f"Container execution timed out after {timeout_seconds} seconds")
-            
+
+            # Get exit code and logs
+            container.reload()
+            exit_code = container.attrs.get("State", {}).get("ExitCode", 1)
+
             stdout = container.logs(stdout=True, stderr=False).decode("utf-8", errors="replace")
             stderr = container.logs(stdout=False, stderr=True).decode("utf-8", errors="replace")
         except InterruptedError:
@@ -324,7 +334,7 @@ def _run_build_in_container(
             raise
 
         return ContainerResult(
-            returncode=exit_code.get("StatusCode", 1),
+            returncode=exit_code if isinstance(exit_code, int) else exit_code.get("StatusCode", 1),
             stdout=stdout,
             stderr=stderr,
         )
@@ -461,34 +471,44 @@ def _run_script_in_container(
 
         # Wait for container to finish with timeout, checking for cancellation periodically
         try:
-            # Use a shorter timeout to check for cancellation periodically
-            check_interval = 5  # Check every 5 seconds
+            import time
+            # Poll container status instead of using wait() to avoid HTTP timeout issues
+            check_interval = 2  # Check every 2 seconds
             elapsed = 0
-            exit_code = None
-            
+
             while elapsed < timeout_seconds:
                 # Check if task was cancelled
                 if check_cancelled and check_cancelled():
                     print(f"Task cancelled, stopping script container...")
                     container.stop(timeout=5)
                     raise InterruptedError("Task was cancelled by user")
-                
-                # Wait with a short timeout to allow periodic checks
-                remaining_timeout = min(check_interval, timeout_seconds - elapsed)
+
+                # Reload container state
                 try:
-                    exit_code = container.wait(timeout=remaining_timeout)
-                    break  # Container finished
-                except Exception as wait_error:
-                    # If timeout, continue loop to check cancellation
-                    if "timeout" in str(wait_error).lower():
-                        elapsed += check_interval
-                        continue
-                    raise
-            
-            # If we exited the loop without getting exit_code, it means timeout
-            if exit_code is None:
+                    container.reload()
+                    status = container.status
+
+                    # Check if container has finished
+                    if status in ("exited", "dead"):
+                        break
+
+                    # Container still running, wait a bit
+                    time.sleep(check_interval)
+                    elapsed += check_interval
+
+                except Exception as reload_error:
+                    # If reload fails, container might be gone - try to continue
+                    print(f"Warning: container.reload() failed: {reload_error}")
+                    break
+
+            # Check if we timed out
+            if elapsed >= timeout_seconds and container.status == "running":
                 raise TimeoutError(f"Container execution timed out after {timeout_seconds} seconds")
-            
+
+            # Get exit code and logs
+            container.reload()
+            exit_code = container.attrs.get("State", {}).get("ExitCode", 1)
+
             stdout = container.logs(stdout=True, stderr=False).decode("utf-8", errors="replace")
             stderr = container.logs(stdout=False, stderr=True).decode("utf-8", errors="replace")
         except InterruptedError:
@@ -520,7 +540,7 @@ def _run_script_in_container(
             raise
 
         return ContainerResult(
-            returncode=exit_code.get("StatusCode", 1),
+            returncode=exit_code if isinstance(exit_code, int) else exit_code.get("StatusCode", 1),
             stdout=stdout,
             stderr=stderr,
         )
