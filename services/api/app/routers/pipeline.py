@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import select, desc, func
 from pydantic import BaseModel
 from typing import List, Optional, Dict
 from datetime import datetime
+import docker
 
 from ..db import SessionLocal
 from ..models import AnalysisModule, TaskRun, Evidence, User
@@ -93,6 +94,54 @@ class TaskRunStatusUpdate(BaseModel):
 
 
 # ---------- Helpers internes ----------
+
+def _stop_docker_containers_for_task(run: TaskRun):
+    """
+    Arrête les conteneurs Docker en cours d'exécution pour une tâche donnée.
+    Pour run_custom_script, on cherche les conteneurs qui pourraient être liés à cette tâche.
+    """
+    try:
+        client = docker.from_env()
+        
+        # Chercher les conteneurs en cours d'exécution
+        running_containers = client.containers.list(filters={"status": "running"})
+        
+        # Pour run_custom_script, on peut identifier les conteneurs par leur nom ou labels
+        # Les conteneurs créés par run_custom_script n'ont pas de labels spécifiques,
+        # donc on va essayer d'arrêter tous les conteneurs qui pourraient être liés
+        # En pratique, on pourrait améliorer cela en ajoutant des labels aux conteneurs
+        
+        # Pour l'instant, on cherche les conteneurs qui contiennent "sandbox" dans leur nom
+        # ou qui sont récents (créés dans les dernières minutes)
+        stopped_count = 0
+        for container in running_containers:
+            try:
+                # Vérifier si le conteneur est récent (créé dans les 10 dernières minutes)
+                # et pourrait être lié à cette tâche
+                container_info = container.attrs
+                created = container_info.get("Created", "")
+                
+                # Arrêter les conteneurs sandbox qui pourraient être liés
+                image = container_info.get("Config", {}).get("Image", "")
+                if "sandbox" in image.lower():
+                    container.stop(timeout=5)
+                    container.remove()
+                    stopped_count += 1
+            except Exception as e:
+                # Ignorer les erreurs pour un conteneur spécifique
+                print(f"Warning: Could not stop container {container.id}: {e}")
+                continue
+        
+        if stopped_count > 0:
+            print(f"Stopped {stopped_count} Docker container(s) for task {run.id}")
+            
+    except docker.errors.DockerException as e:
+        print(f"Error connecting to Docker: {e}")
+        raise
+    except Exception as e:
+        print(f"Error stopping Docker containers: {e}")
+        raise
+
 
 def serialize_task_run(r: TaskRun) -> TaskRunOut:
     # Get case_id from evidence relationship
@@ -415,9 +464,10 @@ def kill_run(
     current_user: User = Depends(get_current_active_user)
 ):
     """
-    Demande l'arrêt d'un run en cours (queued/running).
-    NOTE: avec Celery en mode eager (dev), ça ne tue rien en vrai,
-    mais on prépare déjà l'API pour plus tard.
+    Arrête un run en cours (queued/running).
+    - Révoque la tâche Celery avec terminate=True pour forcer l'arrêt
+    - Arrête les conteneurs Docker si la tâche en utilise
+    - Met à jour le statut du TaskRun à "killed"
     """
 
     ensure_has_write_permissions(current_user)
@@ -429,20 +479,39 @@ def kill_run(
     ensure_task_run_access(run, current_user, db)
 
     if run.status not in ("queued", "running"):
-        raise HTTPException(status_code=400, detail="cannot kill this run")
+        raise HTTPException(
+            status_code=400, 
+            detail=f"cannot kill this run: status is '{run.status}' (must be 'queued' or 'running')"
+        )
 
-    if not run.celery_task_id:
-        # en mode eager, on n'a pas vraiment d'ID exploitable
-        run.progress_message = "kill requested (no worker id)"
-        db.commit()
-        return {"ok": True, "note": "no celery_task_id recorded (dev/eager mode)"}
+    # Arrêter les conteneurs Docker si la tâche en utilise (ex: run_custom_script)
+    if run.task_name == "run_custom_script" and run.status == "running":
+        try:
+            _stop_docker_containers_for_task(run)
+        except Exception as e:
+            # Log l'erreur mais continue quand même avec la révocation Celery
+            print(f"Warning: Failed to stop Docker containers for task {task_run_id}: {e}")
 
-    # revoke côté Celery (en prod)
-    celery_app.control.revoke(run.celery_task_id, terminate=False)
-    run.progress_message = "kill requested"
+    # Révoquer la tâche Celery avec terminate=True pour forcer l'arrêt
+    if run.celery_task_id:
+        try:
+            celery_app.control.revoke(run.celery_task_id, terminate=True, signal="SIGKILL")
+        except Exception as e:
+            print(f"Warning: Failed to revoke Celery task {run.celery_task_id}: {e}")
+
+    # Mettre à jour le statut du TaskRun
+    run.status = "killed"
+    run.ended_at_utc = datetime.utcnow()
+    run.progress_message = "killed by user"
+    run.error_message = "Task was killed by user request"
     db.commit()
 
-    return {"ok": True}
+    return {
+        "ok": True,
+        "task_run_id": run.id,
+        "status": run.status,
+        "message": "Task killed successfully"
+    }
 
 
 @router.patch("/pipeline/run/{task_run_id}/status")

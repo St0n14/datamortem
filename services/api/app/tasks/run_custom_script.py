@@ -576,6 +576,7 @@ def _auto_index_script_results(output_dir: str, script: CustomScript, run: TaskR
     and triggers indexation tasks for each one found.
 
     Skips files larger than 500MB to avoid OOM issues.
+    After successful indexation, deletes the source files to save disk space.
     """
     indexable_extensions = {".jsonl", ".csv", ".parquet"}
     indexed_count = 0
@@ -584,44 +585,69 @@ def _auto_index_script_results(output_dir: str, script: CustomScript, run: TaskR
 
     try:
         output_path = Path(output_dir)
+        files_to_index = []
 
-        # Search for indexable files in output directory
+        # Collect all indexable files
         for file_path in output_path.rglob("*"):
             if file_path.is_file() and file_path.suffix.lower() in indexable_extensions:
                 # Skip the output.txt file
                 if file_path.name == "output.txt":
                     continue
 
-                # Check file size
-                file_size = file_path.stat().st_size
-                file_size_mb = file_size / (1024 * 1024)
+                files_to_index.append(file_path)
 
-                if file_size > max_file_size:
-                    print(f"[Auto-Index] Skipping large file: {file_path} ({file_size_mb:.1f}MB)")
-                    print(f"  File too large for auto-indexation (limit: 500MB)")
-                    print(f"  Use manual indexation via API: POST /api/indexing/task-run")
-                    skipped_count += 1
-                    continue
+        # Sort files to have consistent ordering
+        files_to_index.sort()
 
-                parser_name = f"custom_script.{script.name}"
+        print(f"[Auto-Index] Found {len(files_to_index)} file(s) to index")
 
-                print(f"[Auto-Index] Triggering indexation for {file_path} ({file_size_mb:.1f}MB)")
-                print(f"  Parser: {parser_name}")
-                print(f"  Task Run: {run.id}")
+        # Index each file
+        for file_path in files_to_index:
+            file_size = file_path.stat().st_size
+            file_size_mb = file_size / (1024 * 1024)
 
-                # Trigger async indexation task
-                try:
-                    index_results_task.delay(
-                        task_run_id=run.id,
-                        file_path=str(file_path),
-                        parser_name=parser_name
-                    )
+            if file_size > max_file_size:
+                print(f"[Auto-Index] Skipping large file: {file_path.name} ({file_size_mb:.1f}MB)")
+                print(f"  File too large for auto-indexation (limit: 500MB)")
+                print(f"  Consider splitting the file or use manual indexation")
+                skipped_count += 1
+                continue
+
+            parser_name = f"custom_script.{script.name}"
+
+            print(f"[Auto-Index] Indexing {file_path.name} ({file_size_mb:.1f}MB)")
+
+            # Trigger indexation task synchronously to ensure completion before cleanup
+            try:
+                from .index_results import index_results_task
+
+                # Call synchronously (not .delay()) to wait for completion
+                result = index_results_task(
+                    task_run_id=run.id,
+                    file_path=str(file_path),
+                    parser_name=parser_name
+                )
+
+                if result.get("status") == "success":
+                    stats = result.get("stats", {})
+                    print(f"  ✓ Indexed {stats.get('indexed', 0)} documents")
                     indexed_count += 1
-                except Exception as index_error:
-                    print(f"[Auto-Index] Failed to trigger indexation for {file_path}: {index_error}")
 
+                    # Delete the file after successful indexation to save space
+                    try:
+                        file_path.unlink()
+                        print(f"  ✓ Cleaned up {file_path.name}")
+                    except Exception as cleanup_error:
+                        print(f"  Warning: Could not delete {file_path.name}: {cleanup_error}")
+                else:
+                    print(f"  ✗ Indexation failed: {result.get('error', 'unknown error')}")
+
+            except Exception as index_error:
+                print(f"[Auto-Index] Failed to index {file_path.name}: {index_error}")
+
+        # Summary
         if indexed_count > 0:
-            print(f"[Auto-Index] Triggered indexation for {indexed_count} file(s)")
+            print(f"[Auto-Index] Successfully indexed and cleaned {indexed_count} file(s)")
         if skipped_count > 0:
             print(f"[Auto-Index] Skipped {skipped_count} large file(s) (>500MB)")
         if indexed_count == 0 and skipped_count == 0:

@@ -133,8 +133,13 @@ def import_from_github(
     """
     Import Python scripts from a GitHub repository.
 
-    Fetches all .py files from the specified path in the repository
-    and creates them as scripts (not approved by default).
+    Imports parser folders with the following expected layout:
+
+        NomDuParser/
+            parser_file.py
+            requirements.txt (optional)
+
+    Each folder becomes a CustomScript instance whose name matches the directory.
     """
     try:
         # Parse GitHub URL to extract owner and repo
@@ -162,21 +167,77 @@ def import_from_github(
         errors = []
 
         for file in files:
-            # Only import .py files
-            if not file.get('name', '').endswith('.py'):
+            # Only iterate over parser folders
+            if file.get("type") != "dir":
                 continue
 
-            # Fetch file content
-            download_url = file.get('download_url')
-            if not download_url:
+            parser_name = file.get("name")
+            parser_path = f"{payload.scripts_path.rstrip('/')}/{parser_name}"
+
+            # Fetch contents of the parser directory
+            dir_api_url = (
+                f"https://api.github.com/repos/{owner}/{repo}/contents/"
+                f"{parser_path}?ref={payload.branch}"
+            )
+            dir_response = requests.get(dir_api_url, timeout=10)
+            if dir_response.status_code != 200:
+                errors.append(
+                    f"Unable to fetch folder {parser_name}: "
+                    f"{dir_response.status_code}"
+                )
                 continue
 
-            content_response = requests.get(download_url, timeout=10)
+            dir_files = dir_response.json()
+            python_files = [
+                item
+                for item in dir_files
+                if item.get("type") == "file"
+                and item.get("name", "").endswith(".py")
+            ]
+            if not python_files:
+                errors.append(f"No Python file found in {parser_name}")
+                continue
+
+            # Prefer file that matches folder name, fallback to first entry
+            script_file = next(
+                (
+                    item
+                    for item in python_files
+                    if item["name"].removesuffix(".py") == parser_name
+                ),
+                python_files[0],
+            )
+            script_download_url = script_file.get("download_url")
+            if not script_download_url:
+                errors.append(f"Missing download URL for {parser_name}")
+                continue
+
+            content_response = requests.get(script_download_url, timeout=10)
             if content_response.status_code != 200:
-                errors.append(f"Failed to download {file['name']}")
+                errors.append(f"Failed to download {script_file['name']}")
                 continue
 
-            script_name = file['name'].replace('.py', '')
+            # Optional requirements.txt
+            requirements = None
+            requirements_file = next(
+                (
+                    item
+                    for item in dir_files
+                    if item.get("type") == "file"
+                    and item.get("name", "").lower() == "requirements.txt"
+                ),
+                None,
+            )
+            if requirements_file and requirements_file.get("download_url"):
+                req_response = requests.get(requirements_file["download_url"], timeout=10)
+                if req_response.status_code == 200:
+                    requirements = req_response.text
+                else:
+                    errors.append(
+                        f"Failed to download requirements for {parser_name}"
+                    )
+
+            script_name = parser_name
             source_code = content_response.text
 
             # Check if script already exists
@@ -189,8 +250,12 @@ def import_from_github(
             try:
                 script = CustomScript(
                     name=script_name,
-                    description=f"Imported from {owner}/{repo}/{payload.scripts_path}",
+                    description=f"Imported from {owner}/{repo}/{parser_path}",
                     language="python",
+                    language_version="3.11",
+                    python_version="3.11",
+                    entry_point=script_file["name"],
+                    requirements=requirements,
                     source_code=source_code,
                     created_by_id=current_user.id,
                     is_approved=False,  # Not approved by default

@@ -255,6 +255,9 @@ def index_jsonl_results(
     """
     Lit un fichier JSONL (JSON Lines) et l'indexe dans OpenSearch.
 
+    Uses deterministic document IDs based on case_id + evidence_uid + file_path + metadata
+    to prevent duplicates when reindexing the same data.
+
     Args:
         client: OpenSearch client instance
         case_id: Case identifier
@@ -268,6 +271,7 @@ def index_jsonl_results(
         Dict with stats: {indexed: int, failed: int, errors: list, total_rows: int}
     """
     import json
+    import hashlib
     from .index_manager import get_index_name, create_index_if_not_exists
 
     # Vérifie que le fichier existe
@@ -325,8 +329,34 @@ def index_jsonl_results(
                         logger.warning(f"Line {line_num}: Missing @timestamp, using indexed_at")
                         doc["@timestamp"] = doc["indexed_at"]
 
+                    # Generate deterministic ID to prevent duplicates on reindex
+                    # Uses case_id + evidence_uid + file_path (or other unique fields)
+                    id_components = [case_id, evidence_uid, parser_name]
+
+                    # Try to find unique identifiers in the document
+                    # Priority: file.path > file.name > record_number > full doc hash
+                    if "file" in doc and "path" in doc.get("file", {}):
+                        id_components.append(doc["file"]["path"])
+                    elif "file" in doc and "name" in doc.get("file", {}):
+                        id_components.append(doc["file"]["name"])
+                    elif "record_number" in doc:
+                        id_components.append(str(doc["record_number"]))
+                    else:
+                        # Fallback: hash the entire document (excluding indexed_at)
+                        doc_copy = {k: v for k, v in doc.items() if k != "indexed_at"}
+                        doc_hash = hashlib.sha256(
+                            json.dumps(doc_copy, sort_keys=True).encode()
+                        ).hexdigest()[:16]
+                        id_components.append(doc_hash)
+
+                    # Generate deterministic ID
+                    doc_id = hashlib.sha256(
+                        ":".join(str(c) for c in id_components).encode()
+                    ).hexdigest()
+
                     yield {
                         "_index": index_name,
+                        "_id": doc_id,  # Deterministic ID prevents duplicates
                         "_source": doc
                     }
 
