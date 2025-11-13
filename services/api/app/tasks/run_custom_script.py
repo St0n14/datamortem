@@ -574,9 +574,13 @@ def _auto_index_script_results(output_dir: str, script: CustomScript, run: TaskR
 
     Searches for .jsonl, .csv, or .parquet files in the output directory
     and triggers indexation tasks for each one found.
+
+    Skips files larger than 500MB to avoid OOM issues.
     """
     indexable_extensions = {".jsonl", ".csv", ".parquet"}
     indexed_count = 0
+    skipped_count = 0
+    max_file_size = 500 * 1024 * 1024  # 500MB in bytes
 
     try:
         output_path = Path(output_dir)
@@ -588,9 +592,20 @@ def _auto_index_script_results(output_dir: str, script: CustomScript, run: TaskR
                 if file_path.name == "output.txt":
                     continue
 
+                # Check file size
+                file_size = file_path.stat().st_size
+                file_size_mb = file_size / (1024 * 1024)
+
+                if file_size > max_file_size:
+                    print(f"[Auto-Index] Skipping large file: {file_path} ({file_size_mb:.1f}MB)")
+                    print(f"  File too large for auto-indexation (limit: 500MB)")
+                    print(f"  Use manual indexation via API: POST /api/indexing/task-run")
+                    skipped_count += 1
+                    continue
+
                 parser_name = f"custom_script.{script.name}"
 
-                print(f"[Auto-Index] Triggering indexation for {file_path}")
+                print(f"[Auto-Index] Triggering indexation for {file_path} ({file_size_mb:.1f}MB)")
                 print(f"  Parser: {parser_name}")
                 print(f"  Task Run: {run.id}")
 
@@ -607,7 +622,9 @@ def _auto_index_script_results(output_dir: str, script: CustomScript, run: TaskR
 
         if indexed_count > 0:
             print(f"[Auto-Index] Triggered indexation for {indexed_count} file(s)")
-        else:
+        if skipped_count > 0:
+            print(f"[Auto-Index] Skipped {skipped_count} large file(s) (>500MB)")
+        if indexed_count == 0 and skipped_count == 0:
             print(f"[Auto-Index] No indexable files found in {output_dir}")
 
     except Exception as e:
