@@ -1,7 +1,7 @@
 # Sandbox Runner for Python scripts
 # Secure, isolated environment for custom Python scripts
 
-ARG PYTHON_VERSION=3.11
+ARG PYTHON_VERSION=3.12  # Supports 3.8, 3.9, 3.10, 3.11, 3.12
 FROM python:${PYTHON_VERSION}-slim
 
 # Install minimal system dependencies

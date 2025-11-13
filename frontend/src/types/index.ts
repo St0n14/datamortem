@@ -72,6 +72,12 @@ export interface IndexTaskRunResponse {
   celery_task_id: string;
 }
 
+export interface FieldFilter {
+  field: string;
+  operator: 'equals' | 'not_equals' | 'contains' | 'prefix' | 'wildcard' | 'exists' | 'missing';
+  value?: any;
+}
+
 export interface SearchRequest {
   query: string;
   case_id: string;
@@ -80,6 +86,8 @@ export interface SearchRequest {
   sort_by?: string;
   sort_order?: 'asc' | 'desc';
   filters?: Record<string, any>;
+  field_filters?: FieldFilter[];
+  time_range?: { gte?: string; lte?: string };
 }
 
 export interface SearchHit {
@@ -90,16 +98,20 @@ export interface SearchHit {
 }
 
 export interface SearchResponse {
-  hits: SearchHit[];
+  hits: Record<string, any>[];  // Les hits sont directement les documents sources
   total: number;
   took: number;
-  max_score: number;
+  from_?: number;
+  size?: number;
 }
 
 export interface AggregateRequest {
   case_id: string;
   field: string;
   size?: number;
+  query?: string;
+  field_filters?: FieldFilter[];
+  time_range?: { gte?: string; lte?: string };
 }
 
 export interface TimelineRequest {
@@ -107,6 +119,9 @@ export interface TimelineRequest {
   interval?: string;
   start_time?: string;
   end_time?: string;
+  query?: string;
+  field_filters?: FieldFilter[];
+  time_range?: { gte?: string; lte?: string };
 }
 
 export interface IndexStats {

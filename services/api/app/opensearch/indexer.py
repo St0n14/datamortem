@@ -305,10 +305,25 @@ def index_jsonl_results(
                     # Parse le JSON
                     doc = json.loads(line)
 
+                    # Ensure doc is a dict
+                    if not isinstance(doc, dict):
+                        raise ValueError(f"Document is not a dict, got {type(doc)}")
+
+                    # Normalize case_id / evidence_uid if they're at root level
+                    # (some scripts put them there instead of nested)
+                    if "case_id" in doc and "case" not in doc:
+                        doc["case"] = {"id": doc.pop("case_id")}
+                    if "evidence_uid" in doc and "evidence" not in doc:
+                        doc["evidence"] = {"uid": doc.pop("evidence_uid")}
+
                     # Les événements générés ont déjà les bons champs
                     # Mais on enrichit quand même si nécessaire
                     if "case" not in doc:
                         doc["case"] = {}
+                    elif not isinstance(doc["case"], dict):
+                        # If case is not a dict, convert it
+                        doc["case"] = {"id": str(doc["case"])}
+
                     if "id" not in doc["case"]:
                         doc["case"]["id"] = case_id
                     if case_name and "name" not in doc.get("case", {}):
@@ -316,27 +331,85 @@ def index_jsonl_results(
 
                     if "evidence" not in doc:
                         doc["evidence"] = {"uid": evidence_uid}
+                    elif not isinstance(doc["evidence"], dict):
+                        doc["evidence"] = {"uid": str(doc["evidence"])}
 
                     if "source" not in doc:
                         doc["source"] = {}
+                    elif not isinstance(doc["source"], dict):
+                        doc["source"] = {"parser": str(doc["source"])}
+
                     if "parser" not in doc.get("source", {}):
                         doc["source"]["parser"] = parser_name
 
                     doc["indexed_at"] = datetime.utcnow().isoformat()
 
-                    # Vérifie @timestamp
-                    if "@timestamp" not in doc:
-                        logger.warning(f"Line {line_num}: Missing @timestamp, using indexed_at")
+                    # Vérifie @timestamp - use indexed_at if missing or null
+                    if not doc.get("@timestamp"):
+                        logger.warning(f"Line {line_num}: Missing or null @timestamp, using indexed_at")
                         doc["@timestamp"] = doc["indexed_at"]
+                    else:
+                        # Normalize timestamp format: replace space with T for ISO 8601
+                        # OpenSearch requires strict ISO format: YYYY-MM-DDTHH:MM:SS.ffffff+00:00
+                        timestamp = doc["@timestamp"]
+                        if isinstance(timestamp, str) and " " in timestamp:
+                            # Replace space with T: "2019-03-15 15:37:53" -> "2019-03-15T15:37:53"
+                            doc["@timestamp"] = timestamp.replace(" ", "T", 1)
+
+                    # Add a human-readable message field if missing
+                    if "message" not in doc:
+                        # Try to create a meaningful message from available fields
+                        msg_parts = []
+
+                        # For MFT entries
+                        if "path" in doc:
+                            msg_parts.append(f"File: {doc['path']}")
+                        elif "file" in doc and "path" in doc.get("file", {}):
+                            msg_parts.append(f"File: {doc['file']['path']}")
+                        elif "file_name" in doc:
+                            msg_parts.append(f"File: {doc['file_name']}")
+
+                        # Add size if available
+                        if "size" in doc:
+                            size = doc["size"]
+                            if isinstance(size, (int, float)):
+                                if size >= 1024*1024:
+                                    msg_parts.append(f"Size: {size/(1024*1024):.2f}MB")
+                                elif size >= 1024:
+                                    msg_parts.append(f"Size: {size/1024:.2f}KB")
+                                else:
+                                    msg_parts.append(f"Size: {size}B")
+
+                        # Add record number for MFT
+                        if "record_number" in doc:
+                            msg_parts.append(f"MFT Record: {doc['record_number']}")
+
+                        # Add segment if present
+                        if "segment" in doc:
+                            msg_parts.append(f"Segment: {doc['segment']}")
+
+                        # Create message or fallback
+                        if msg_parts:
+                            doc["message"] = " | ".join(msg_parts)
+                        else:
+                            doc["message"] = f"Event from {parser_name}"
 
                     # Generate deterministic ID to prevent duplicates on reindex
                     # Uses case_id + evidence_uid + file_path (or other unique fields)
                     id_components = [case_id, evidence_uid, parser_name]
 
                     # Try to find unique identifiers in the document
-                    # Priority: file.path > file.name > record_number > full doc hash
+                    # Priority: file.path > path > file.name > segment+path > record_number > full doc hash
                     if "file" in doc and "path" in doc.get("file", {}):
                         id_components.append(doc["file"]["path"])
+                    elif "path" in doc:
+                        # For MFT entries, path is at root level
+                        path = doc["path"]
+                        # Add segment if present for uniqueness (MFT can have same path, different segment)
+                        if "segment" in doc:
+                            id_components.append(f"{path}:segment={doc['segment']}")
+                        else:
+                            id_components.append(path)
                     elif "file" in doc and "name" in doc.get("file", {}):
                         id_components.append(doc["file"]["name"])
                     elif "record_number" in doc:
@@ -385,9 +458,40 @@ def index_jsonl_results(
 
         if failed_items:
             stats["failed"] += len(failed_items)
+
+            # Debug: log the structure of the first failed item
+            if failed_items:
+                logger.error(f"First failed item structure: {failed_items[0]}")
+
+            # Extract errors from failed items
             for item in failed_items[:10]:
-                if "error" in item:
-                    stats["errors"].append(str(item["error"]))
+                # failed_items structure from helpers.bulk is a list of dicts with keys like 'index', 'create', etc.
+                # Each contains the action and error details
+                error_msg = None
+
+                # Try different structures
+                if isinstance(item, dict):
+                    # Try to find the error in common locations
+                    for action in ['index', 'create', 'update']:
+                        if action in item:
+                            error_info = item[action].get('error')
+                            if error_info:
+                                if isinstance(error_info, dict):
+                                    error_msg = f"{error_info.get('type', 'unknown')}: {error_info.get('reason', str(error_info))}"
+                                else:
+                                    error_msg = str(error_info)
+                                break
+
+                    # Fallback: just stringify the whole item
+                    if not error_msg and 'error' in item:
+                        error_msg = str(item['error'])
+
+                if error_msg:
+                    stats["errors"].append(error_msg)
+                else:
+                    # Last resort: dump the whole item
+                    stats["errors"].append(f"Unknown error format: {str(item)[:200]}")
+
             logger.error(f"Failed to index {len(failed_items)} documents")
 
         logger.info(
@@ -396,7 +500,7 @@ def index_jsonl_results(
         )
 
     except Exception as e:
-        logger.error(f"Bulk indexing failed: {e}")
+        logger.error(f"Bulk indexing failed: {e}", exc_info=True)
         stats["errors"].append(f"Bulk operation error: {str(e)}")
 
     return stats

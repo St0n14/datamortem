@@ -3,9 +3,10 @@ import { Card, CardContent } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { Input } from "../components/ui/Input";
 import { Badge } from "../components/ui/Badge";
-import { Search, ChevronLeft, ChevronRight, RefreshCw, Filter, Plus, Trash2, X } from "lucide-react";
+import { Search, ChevronLeft, ChevronRight, RefreshCw, Filter, Plus, Trash2, X, Settings2, Check, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
-import { searchAPI } from "../services/api";
+import { searchAPI, evidenceAPI } from "../services/api";
+import type { Evidence } from "../types";
 
 interface ExplorerViewProps {
   darkMode: boolean;
@@ -136,6 +137,13 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
   const [fieldSearch, setFieldSearch] = useState("");
   const [fieldExplorerOpen, setFieldExplorerOpen] = useState(true);
   const [selectedEvent, setSelectedEvent] = useState<SearchResult | null>(null);
+  const [evidences, setEvidences] = useState<Evidence[]>([]);
+  const [selectedEvidenceId, setSelectedEvidenceId] = useState<string | null>(null);
+  const [loadingEvidences, setLoadingEvidences] = useState(false);
+  const [visibleColumns, setVisibleColumns] = useState<string[]>(["@timestamp", "source.parser", "message", "_score"]);
+  const [showColumnSettings, setShowColumnSettings] = useState(false);
+  const [draggedColumn, setDraggedColumn] = useState<string | null>(null);
+  const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
 
   const textWeak = darkMode ? "text-slate-400" : "text-gray-500";
   const textStrong = darkMode ? "text-slate-100" : "text-gray-900";
@@ -146,14 +154,25 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
   const canNext = from + pageSize < total;
 
   const filterPayload = useMemo(() => {
-    return filters
+    const baseFilters = filters
       .filter((row) => row.field && (row.operator === "exists" || row.operator === "missing" || row.value.trim().length > 0))
       .map((row) => ({
         field: row.field,
         operator: row.operator,
         value: row.operator === "exists" || row.operator === "missing" ? null : row.value,
       }));
-  }, [filters]);
+
+    // Ajouter le filtre evidence.uid si un evidence est sélectionné
+    if (selectedEvidenceId) {
+      baseFilters.push({
+        field: "evidence.uid",
+        operator: "equals",
+        value: selectedEvidenceId,
+      });
+    }
+
+    return baseFilters;
+  }, [filters, selectedEvidenceId]);
 
   const timeRangePayload = useMemo(() => {
     const payload: Record<string, string> = {};
@@ -183,6 +202,90 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
     const needle = fieldSearch.toLowerCase();
     return fieldSamples.filter((sample) => sample.field.toLowerCase().includes(needle)).slice(0, 50);
   }, [fieldSamples, fieldSearch]);
+
+  // Colonnes par défaut avec labels
+  const defaultColumns = useMemo(() => {
+    return [
+      { field: "@timestamp", label: "Timestamp" },
+      { field: "source.parser", label: "Parser" },
+      { field: "message", label: "Message" },
+      { field: "_score", label: "Score" },
+    ];
+  }, []);
+
+  // Toutes les colonnes disponibles (défaut + champs trouvés)
+  const availableColumns = useMemo(() => {
+    const columnMap = new Map<string, string>();
+    
+    // Ajouter les colonnes par défaut
+    defaultColumns.forEach((col) => {
+      columnMap.set(col.field, col.label);
+    });
+
+    // Ajouter tous les champs trouvés
+    fieldSamples.forEach((sample) => {
+      if (!columnMap.has(sample.field)) {
+        columnMap.set(sample.field, sample.field);
+      }
+    });
+
+    return Array.from(columnMap.entries()).map(([field, label]) => ({ field, label }));
+  }, [defaultColumns, fieldSamples]);
+
+  // S'assurer que visibleColumns ne soit jamais vide et ne contienne que des colonnes disponibles
+  useEffect(() => {
+    if (visibleColumns.length === 0) {
+      // Si toutes les colonnes ont été supprimées, restaurer les colonnes par défaut
+      setVisibleColumns(defaultColumns.map((col) => col.field));
+      return;
+    }
+
+    // Filtrer les colonnes visibles pour ne garder que celles qui sont disponibles
+    // (les colonnes par défaut sont toujours disponibles)
+    const availableFieldSet = new Set(availableColumns.map((col) => col.field));
+    const defaultFieldSet = new Set(defaultColumns.map((col) => col.field));
+    
+    const validColumns = visibleColumns.filter(
+      (field) => availableFieldSet.has(field) || defaultFieldSet.has(field)
+    );
+
+    // Si après filtrage il ne reste aucune colonne valide, restaurer les colonnes par défaut
+    if (validColumns.length === 0) {
+      setVisibleColumns(defaultColumns.map((col) => col.field));
+    } else if (validColumns.length !== visibleColumns.length) {
+      // Si certaines colonnes ont été filtrées, mettre à jour la liste
+      setVisibleColumns(validColumns);
+    }
+  }, [visibleColumns, availableColumns, defaultColumns]);
+
+  // Obtenir la valeur d'un champ dans un document (avec support pour les chemins imbriqués)
+  const getFieldValue = (doc: Record<string, any>, field: string): any => {
+    if (field === "_score") {
+      return null; // Le score n'est pas dans le doc, on le gère séparément
+    }
+    
+    // Gérer les chemins imbriqués comme "source.parser"
+    const parts = field.split(".");
+    let value: any = doc;
+    for (const part of parts) {
+      if (value === null || value === undefined) {
+        return null;
+      }
+      value = value[part];
+    }
+    return value;
+  };
+
+  // Formater une valeur pour l'affichage dans le tableau
+  const formatCellValue = (value: any): string => {
+    if (value === null || value === undefined) {
+      return "-";
+    }
+    if (typeof value === "object") {
+      return JSON.stringify(value);
+    }
+    return String(value);
+  };
   const authHeaders = useMemo(() => (token ? { Authorization: `Bearer ${token}` } : {}), [token]);
 
   useEffect(() => {
@@ -237,6 +340,30 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
     ]);
   };
 
+  // Charger les evidences quand le case change
+  useEffect(() => {
+    if (!currentCaseId || !token) {
+      setEvidences([]);
+      setSelectedEvidenceId(null);
+      return;
+    }
+    const loadEvidences = async () => {
+      setLoadingEvidences(true);
+      try {
+        const data = await evidenceAPI.list(currentCaseId);
+        setEvidences(data);
+        // Réinitialiser la sélection d'evidence quand le case change
+        setSelectedEvidenceId(null);
+      } catch (err) {
+        console.error("Failed to load evidences:", err);
+        setEvidences([]);
+      } finally {
+        setLoadingEvidences(false);
+      }
+    };
+    loadEvidences();
+  }, [currentCaseId, token]);
+
   useEffect(() => {
     if (!currentCaseId || !token) {
       setResults([]);
@@ -259,7 +386,7 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
     }
     setPage(0);
     setRefreshToken((t) => t + 1);
-  }, [pageSize, filterPayload, timeRangeKey, currentCaseId, token]);
+  }, [pageSize, filterPayload, timeRangeKey, currentCaseId, token, selectedEvidenceId]);
 
   useEffect(() => {
     if (!currentCaseId || !token) {
@@ -279,7 +406,7 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
           query: submittedQuery,
           case_id: currentCaseId,
           size: pageSize,
-          from: page * pageSize,
+          from_: page * pageSize,
           sort_by: "@timestamp",
           sort_order: "desc",
           field_filters: filterPayload,
@@ -344,7 +471,7 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
           field: aggField,
           size: aggSize,
           query: submittedQuery,
-          field_filters: filterPayload,
+          field_filters: filterPayload.length > 0 ? filterPayload : undefined,
           time_range: timeRangePayload,
         });
         setAggBuckets(data.aggregations?.buckets || data.buckets || []);
@@ -370,6 +497,256 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
 
   const handleBucketClick = (bucket: AggregationBucket) => {
     handleQuickFilterAdd(aggField, bucket.key);
+  };
+
+  const toggleColumn = (field: string) => {
+    setVisibleColumns((prev) => {
+      if (prev.includes(field)) {
+        // Au moins une colonne doit rester visible - ne pas supprimer si c'est la dernière
+        if (prev.length === 1) {
+          return prev;
+        }
+        const newColumns = prev.filter((f) => f !== field);
+        // S'assurer qu'on ne supprime jamais toutes les colonnes
+        return newColumns.length > 0 ? newColumns : prev;
+      } else {
+        return [...prev, field];
+      }
+    });
+  };
+
+  const handleDragStart = (field: string) => {
+    setDraggedColumn(field);
+  };
+
+  const handleDragOver = (e: React.DragEvent, field: string) => {
+    e.preventDefault();
+    if (draggedColumn && draggedColumn !== field) {
+      setDragOverColumn(field);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    // Ne pas réinitialiser si on entre dans un enfant
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const x = e.clientX;
+    const y = e.clientY;
+    if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+      return;
+    }
+    setDragOverColumn(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, targetField: string) => {
+    e.preventDefault();
+    if (!draggedColumn || draggedColumn === targetField) {
+      setDraggedColumn(null);
+      setDragOverColumn(null);
+      return;
+    }
+
+    setVisibleColumns((prev) => {
+      const newColumns = [...prev];
+      const draggedIndex = newColumns.indexOf(draggedColumn);
+      const targetIndex = newColumns.indexOf(targetField);
+
+      if (draggedIndex === -1 || targetIndex === -1) {
+        return prev;
+      }
+
+      // Réorganiser les colonnes
+      newColumns.splice(draggedIndex, 1);
+      newColumns.splice(targetIndex, 0, draggedColumn);
+
+      return newColumns;
+    });
+
+    setDraggedColumn(null);
+    setDragOverColumn(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedColumn(null);
+    setDragOverColumn(null);
+  };
+
+  const getColumnLabel = (field: string): string => {
+    const defaultCol = defaultColumns.find((col) => col.field === field);
+    return defaultCol?.label || field;
+  };
+
+  const renderColumnSettings = () => {
+    if (!showColumnSettings) return null;
+
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowColumnSettings(false)}>
+        <div
+          className={`max-w-2xl w-full max-h-[80vh] rounded-lg border shadow-2xl ${cardBg} flex flex-col`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className={`flex items-center justify-between border-b px-6 py-4 ${darkMode ? "border-slate-700" : "border-gray-200"}`}>
+            <div>
+              <h3 className={`text-lg font-semibold ${textStrong}`}>Configurer les colonnes</h3>
+              <p className={`text-sm ${textWeak}`}>Sélectionnez les colonnes à afficher dans le tableau</p>
+            </div>
+            <button
+              onClick={() => setShowColumnSettings(false)}
+              className={`rounded-lg p-2 transition hover:bg-slate-800 ${textWeak}`}
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-auto p-6">
+            <div className="space-y-2">
+              <div className={`text-xs font-semibold ${textWeak} mb-2 px-2`}>
+                Colonnes visibles (faites glisser pour réorganiser)
+              </div>
+              {visibleColumns
+                .map((field) => availableColumns.find((col) => col.field === field))
+                .filter((col) => col !== undefined)
+                .map((column) => {
+                  const isVisible = true;
+                  const isDragging = draggedColumn === column.field;
+                  const isDragOver = dragOverColumn === column.field;
+                  return (
+                    <div
+                      key={column!.field}
+                      draggable={isVisible}
+                      onDragStart={(e) => {
+                        handleDragStart(column!.field);
+                        e.dataTransfer.effectAllowed = "move";
+                      }}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        handleDragOver(e, column!.field);
+                        e.dataTransfer.dropEffect = "move";
+                      }}
+                      onDragLeave={handleDragLeave}
+                      onDrop={(e) => handleDrop(e, column!.field)}
+                      onDragEnd={handleDragEnd}
+                      className={`flex items-center justify-between rounded-lg border p-3 cursor-move transition ${
+                        isDragging
+                          ? "opacity-50"
+                          : isDragOver
+                            ? darkMode
+                              ? "border-l-4 border-violet-500 bg-violet-950/30"
+                              : "border-l-4 border-violet-400 bg-violet-100"
+                            : darkMode
+                              ? "border-slate-800 bg-slate-900/50 hover:bg-slate-800"
+                              : "border-gray-200 bg-gray-50 hover:bg-gray-100"
+                      }`}
+                      onClick={(e) => {
+                        // Ne pas toggle si on clique sur la zone de drag
+                        if ((e.target as HTMLElement).closest('.drag-handle')) {
+                          return;
+                        }
+                        toggleColumn(column!.field);
+                      }}
+                    >
+                      <div className="flex items-center gap-3 flex-1">
+                        <div className="drag-handle cursor-move">
+                          <div className={`w-6 h-6 rounded flex items-center justify-center transition ${
+                            darkMode ? "hover:bg-slate-700" : "hover:bg-gray-200"
+                          }`}>
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className={textWeak}>
+                              <circle cx="2" cy="2" r="1" fill="currentColor" />
+                              <circle cx="6" cy="2" r="1" fill="currentColor" />
+                              <circle cx="10" cy="2" r="1" fill="currentColor" />
+                              <circle cx="2" cy="6" r="1" fill="currentColor" />
+                              <circle cx="6" cy="6" r="1" fill="currentColor" />
+                              <circle cx="10" cy="6" r="1" fill="currentColor" />
+                              <circle cx="2" cy="10" r="1" fill="currentColor" />
+                              <circle cx="6" cy="10" r="1" fill="currentColor" />
+                              <circle cx="10" cy="10" r="1" fill="currentColor" />
+                            </svg>
+                          </div>
+                        </div>
+                        <div
+                          className={`w-5 h-5 rounded border-2 flex items-center justify-center transition ${
+                            isVisible
+                              ? darkMode
+                                ? "bg-violet-600 border-violet-600"
+                                : "bg-violet-500 border-violet-500"
+                              : darkMode
+                                ? "border-slate-600"
+                                : "border-gray-300"
+                          }`}
+                        >
+                          {isVisible && <Check className="h-3 w-3 text-white" />}
+                        </div>
+                        <div>
+                          <div className={`text-sm font-medium ${textStrong}`}>{column!.label}</div>
+                          <div className={`text-xs ${textWeak} font-mono`}>{column!.field}</div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              {visibleColumns.length === 0 && (
+                <div className="text-center py-4">
+                  <p className={`text-sm ${textWeak}`}>Aucune colonne visible</p>
+                </div>
+              )}
+              <div className={`text-xs font-semibold ${textWeak} mb-2 mt-4 px-2`}>
+                Colonnes disponibles
+              </div>
+              {availableColumns
+                .filter((col) => !visibleColumns.includes(col.field))
+                .map((column) => {
+                  return (
+                    <div
+                      key={column.field}
+                      className={`flex items-center justify-between rounded-lg border p-3 cursor-pointer transition ${
+                        darkMode ? "border-slate-800 bg-slate-900/30 hover:bg-slate-800/50" : "border-gray-200 bg-gray-50/50 hover:bg-gray-100"
+                      }`}
+                      onClick={() => toggleColumn(column.field)}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={`w-5 h-5 rounded border-2 flex items-center justify-center transition ${
+                            darkMode ? "border-slate-600" : "border-gray-300"
+                          }`}
+                        >
+                        </div>
+                        <div>
+                          <div className={`text-sm font-medium ${textStrong}`}>{column.label}</div>
+                          <div className={`text-xs ${textWeak} font-mono`}>{column.field}</div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+            {availableColumns.length === 0 && (
+              <div className="text-center py-8">
+                <p className={`text-sm ${textWeak}`}>Aucun champ disponible. Effectuez une recherche pour voir les champs disponibles.</p>
+              </div>
+            )}
+          </div>
+          <div className={`flex items-center justify-end gap-3 border-t px-6 py-4 ${darkMode ? "border-slate-700" : "border-gray-200"}`}>
+            <Button
+              onClick={() => {
+                // Réinitialiser aux colonnes par défaut
+                setVisibleColumns(defaultColumns.map((col) => col.field));
+              }}
+              className={`transition active:scale-95 ${
+                darkMode ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800" : "border-gray-300 bg-slate-50 text-slate-800 hover:bg-slate-100"
+              }`}
+            >
+              Réinitialiser
+            </Button>
+            <Button
+              onClick={() => setShowColumnSettings(false)}
+              className={`transition active:scale-95 ${
+                darkMode ? "border-violet-600/30 bg-violet-950/40 text-violet-200 hover:bg-violet-900/50" : "border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100"
+              }`}
+            >
+              Fermer
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   const renderEventDetail = () => {
@@ -512,14 +889,27 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
                           <div className="text-xs font-semibold truncate">{sample.field}</div>
                           <div className={`text-xs truncate ${textWeak}`}>{sample.value}</div>
                         </div>
-                        <Button
-                          onClick={() => handleQuickFilterAdd(sample.field, sample.value)}
-                          className={`transition active:scale-95 ${
-                            darkMode ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800" : "border-gray-300 bg-slate-50 text-slate-800 hover:bg-slate-100"
-                          }`}
-                        >
-                          Filter
-                        </Button>
+                        <div className="flex items-center gap-2">
+                          {!visibleColumns.includes(sample.field) && (
+                            <Button
+                              onClick={() => toggleColumn(sample.field)}
+                              className={`transition active:scale-95 text-xs ${
+                                darkMode ? "border-violet-600/30 bg-violet-950/40 text-violet-200 hover:bg-violet-900/50" : "border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100"
+                              }`}
+                              title="Ajouter comme colonne"
+                            >
+                              + Colonne
+                            </Button>
+                          )}
+                          <Button
+                            onClick={() => handleQuickFilterAdd(sample.field, sample.value)}
+                            className={`transition active:scale-95 ${
+                              darkMode ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800" : "border-gray-300 bg-slate-50 text-slate-800 hover:bg-slate-100"
+                            }`}
+                          >
+                            Filter
+                          </Button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -662,6 +1052,24 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
             </div>
             <div className="flex items-center gap-3 flex-wrap">
               <div className="flex items-center gap-2">
+                <label className={`text-xs ${textWeak} whitespace-nowrap`}>Evidence</label>
+                <select
+                  value={selectedEvidenceId || ""}
+                  onChange={(e) => setSelectedEvidenceId(e.target.value || null)}
+                  className={`h-8 rounded-lg border px-2 text-sm min-w-[200px] ${
+                    darkMode ? "border-slate-700 bg-slate-900 text-slate-100" : "border-gray-300 bg-slate-50 text-gray-900"
+                  }`}
+                  disabled={loadingEvidences}
+                >
+                  <option value="">Tous les evidences</option>
+                  {evidences.map((evidence) => (
+                    <option key={evidence.evidence_uid} value={evidence.evidence_uid}>
+                      {evidence.evidence_uid}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
                 <label className={`text-xs ${textWeak} whitespace-nowrap`}>Page size</label>
                 <select
                   value={pageSize}
@@ -788,6 +1196,15 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
           <div className={`flex items-center justify-between border-b px-4 py-3 ${darkMode ? "border-slate-800" : "border-gray-200"}`}>
             <div className="flex items-center gap-2">
               <span className={`text-sm font-semibold ${textStrong}`}>Results</span>
+              {selectedEvidenceId && (
+                <Badge
+                  className={`text-[10px] border ${
+                    darkMode ? "bg-violet-900/30 text-violet-200 border-violet-700" : "bg-violet-50 text-violet-700 border-violet-300"
+                  }`}
+                >
+                  Evidence: {selectedEvidenceId}
+                </Badge>
+              )}
               <Badge
                 className={`text-[10px] border ${
                   darkMode ? "bg-slate-900 text-slate-200 border-slate-700" : "bg-gray-50 text-slate-700 border-gray-200"
@@ -797,6 +1214,30 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
               </Badge>
             </div>
             <div className="flex items-center gap-2 text-sm">
+              <Button
+                onClick={() => toggleColumn("message")}
+                className={`transition active:scale-95 ${
+                  visibleColumns.includes("message")
+                    ? darkMode
+                      ? "border-violet-600/30 bg-violet-950/40 text-violet-200 hover:bg-violet-900/50"
+                      : "border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100"
+                    : darkMode
+                      ? "border-slate-700 bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                      : "border-gray-300 bg-slate-50 text-gray-400 hover:bg-slate-100 hover:text-gray-700"
+                }`}
+                title={visibleColumns.includes("message") ? "Masquer la colonne Message" : "Afficher la colonne Message"}
+              >
+                {visibleColumns.includes("message") ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+              </Button>
+              <Button
+                onClick={() => setShowColumnSettings(true)}
+                className={`transition active:scale-95 ${
+                  darkMode ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800" : "border-gray-300 bg-slate-50 text-slate-800 hover:bg-slate-100"
+                }`}
+                title="Configurer les colonnes"
+              >
+                <Settings2 className="h-4 w-4" />
+              </Button>
               <Button
                 disabled={!canPrev || loading}
                 onClick={() => setPage((p) => Math.max(0, p - 1))}
@@ -825,14 +1266,59 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
               <div className="p-8 text-center text-sm">
                 <p className={textWeak}>No events found. Try another query or case.</p>
               </div>
+            ) : visibleColumns.length === 0 ? (
+              <div className="p-8 text-center text-sm">
+                <p className={textWeak}>No columns selected. Please add columns in the column settings.</p>
+              </div>
             ) : (
               <table className="min-w-full text-left text-sm">
                 <thead className={`sticky top-0 ${darkMode ? "bg-slate-900 text-slate-400" : "bg-gray-50 text-gray-500"}`}>
                   <tr>
-                    <th className="px-4 py-2 w-40">Timestamp</th>
-                    <th className="px-4 py-2 w-32">Parser</th>
-                    <th className="px-4 py-2">Message</th>
-                    <th className="px-4 py-2 w-24">Score</th>
+                    {visibleColumns.map((field) => {
+                      const isDragging = draggedColumn === field;
+                      const isDragOver = dragOverColumn === field;
+                      return (
+                        <th
+                          key={field}
+                          draggable
+                          onDragStart={(e) => {
+                            handleDragStart(field);
+                            e.dataTransfer.effectAllowed = "move";
+                          }}
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            handleDragOver(e, field);
+                            e.dataTransfer.dropEffect = "move";
+                          }}
+                          onDragLeave={handleDragLeave}
+                          onDrop={(e) => handleDrop(e, field)}
+                          onDragEnd={handleDragEnd}
+                          className={`px-4 py-2 cursor-move select-none transition relative ${
+                            isDragging
+                              ? "opacity-50"
+                              : isDragOver
+                                ? darkMode
+                                  ? "border-l-4 border-violet-500 bg-violet-950/30"
+                                  : "border-l-4 border-violet-400 bg-violet-100"
+                                : darkMode
+                                  ? "hover:bg-slate-800"
+                                  : "hover:bg-gray-100"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <svg width="8" height="12" viewBox="0 0 8 12" fill="none" className={`${textWeak} opacity-50 flex-shrink-0`}>
+                              <circle cx="2" cy="2" r="0.8" fill="currentColor" />
+                              <circle cx="6" cy="2" r="0.8" fill="currentColor" />
+                              <circle cx="2" cy="6" r="0.8" fill="currentColor" />
+                              <circle cx="6" cy="6" r="0.8" fill="currentColor" />
+                              <circle cx="2" cy="10" r="0.8" fill="currentColor" />
+                              <circle cx="6" cy="10" r="0.8" fill="currentColor" />
+                            </svg>
+                            <span className="select-none">{getColumnLabel(field)}</span>
+                          </div>
+                        </th>
+                      );
+                    })}
                   </tr>
                 </thead>
                 <tbody className={darkMode ? "divide-y divide-slate-800 text-slate-100" : "divide-y divide-gray-100 text-gray-900"}>
@@ -844,10 +1330,19 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
                         darkMode ? "hover:bg-slate-800/50" : "hover:bg-slate-200"
                       }`}
                     >
-                      <td className="px-4 py-2 text-xs text-slate-400">{hit.timestamp || "-"}</td>
-                      <td className="px-4 py-2 text-xs">{hit.parser || hit.doc["source.parser"] || "-"}</td>
-                      <td className="px-4 py-2 text-xs">{hit.message}</td>
-                      <td className="px-4 py-2 text-xs">{hit.score ?? "-"}</td>
+                      {visibleColumns.map((field) => {
+                        let cellValue: any;
+                        if (field === "_score") {
+                          cellValue = hit.score;
+                        } else {
+                          cellValue = getFieldValue(hit.doc, field);
+                        }
+                        return (
+                          <td key={field} className="px-4 py-2 text-xs">
+                            {formatCellValue(cellValue)}
+                          </td>
+                        );
+                      })}
                     </tr>
                   ))}
                 </tbody>
@@ -857,6 +1352,7 @@ export function ExplorerView({ darkMode, currentCaseId }: ExplorerViewProps) {
         </CardContent>
       </Card>
     </div>
+      {renderColumnSettings()}
       {renderEventDetail()}
     </div>
   );

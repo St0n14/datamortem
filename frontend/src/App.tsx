@@ -14,7 +14,7 @@ import { SuperAdminView } from "./views/SuperAdminView";
 import { ProfileView } from "./views/ProfileView";
 import { Sidebar } from "./components/layout/Sidebar";
 import { EventInspector } from "./components/layout/EventInspector";
-import { CaseIndexingSummary } from "./components/CaseIndexingSummary";
+// import { CaseIndexingSummary } from "./components/CaseIndexingSummary";
 import { EmptyCaseView } from "./components/EmptyCaseView";
 import { TimelineSearchBar } from "./components/timeline/TimelineSearchBar";
 import { TimelineCard } from "./components/timeline/TimelineCard";
@@ -358,7 +358,8 @@ function AuthenticatedApp() {
           ) : (
             <div className="flex flex-1 gap-4">
               <section className="flex flex-col flex-[2] min-h-0 min-w-0 gap-4">
-                {activeTab !== "profile" && (
+                {/* Statut d'indexation temporairement désactivé */}
+                {/* {activeTab !== "profile" && (
                   <CaseIndexingSummary
                     darkMode={darkMode}
                     currentCaseId={currentCaseId}
@@ -366,7 +367,7 @@ function AuthenticatedApp() {
                     caseSummaryLoading={caseSummaryLoading}
                     caseSummaryError={caseSummaryError}
                   />
-                )}
+                )} */}
 
                 {activeTab === "timeline" && (
                   <>
